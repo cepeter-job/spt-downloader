@@ -75,7 +75,7 @@ def test_metadata_and_description_custody_are_closed(changes):
         project(pages=pages(rows=[asset(**changes)]))
 
 
-@pytest.mark.parametrize('options', [{'headers': HEADERS[:-1]}, {'footer_spans': [[7, 1, 1]]},
+@pytest.mark.parametrize('options', [{'headers': HEADERS[:-1]}, {'footer_spans': [[], [7, 1, 1]]},
     {'tax_type': 'ICT_RUS'}, {'locale': 'en-US'}, {'timezone_name': 'UTC'}, {'labels': {}},
     {'index': -1}, {'index': True}, {'index': 12}, {'pages': []}, {'total': Number('1.5')}])
 def test_structure_currency_pagination_and_footer_contract_refuse(options):
@@ -85,7 +85,7 @@ def test_structure_currency_pagination_and_footer_contract_refuse(options):
 
 def test_original_footer_is_not_invented_from_body_or_rounded_row_sum():
     result = project(total=Number('1000'))
-    assert result['table']['footer'] == [[], ['TOTAL', '1.000', '']]
+    assert result['table']['footer'] == [['TOTAL', '1.000', '']]
 
 
 def test_original_two_page_coordinates_and_terminal_bounds():

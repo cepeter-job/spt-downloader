@@ -22,14 +22,16 @@ OWNERS = ['rsh-citr-l3-grid1', 'rshshr-citr-l3-grid2']
 GROUPS = ['A. PENGHASILAN DARI LUAR NEGERI', 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']
 
 
-def request(first):
-    return {'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025', 'First': first,
+def request(first, record_id=None):
+    return {'ReturnSheetRecordId': record_id or corpus.RECORD_ID, 'PeriodYear': '2025', 'First': first,
             'Rows': 10, 'SortField': 'WithholdingSlipsDate', 'SortOrder': 1,
             'Filters': [], 'LanguageId': 'id-ID'}
 
 
-def envelope(model='Normal', form=None):
+def envelope(model='Normal', form=None, record_id=None):
     root = corpus.current_form()
+    if record_id is not None:
+        root['ReturnSheetRecordIdentifier'] = record_id
     root['MainFormData']['IsIncomeTaxOverseas'] = 1
     root[ROOT] = inputs()[0] if form is None else form
     return {'IsSuccessful': True, 'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025,
@@ -52,14 +54,15 @@ def packet(value, sequence, endpoint, body, *, method='POST', status=200):
     return item
 
 
-def packets(model='Normal', *, form=None):
+def packets(model='Normal', *, form=None, record_id=None):
     _, pages, footer = inputs()
-    values = [fresh_packet(envelope(model, form)),
+    values = [fresh_packet(envelope(model, form, record_id)),
         packet({'IsSuccessful': True, 'Payload': footer}, 2, FOOTER,
-               {'ReturnSheetRecordId': corpus.RECORD_ID})]
+               {'ReturnSheetRecordId': record_id or corpus.RECORD_ID})]
     for index, page in enumerate(pages):
         values.append(packet({'IsSuccessful': True, 'Payload': {
-            'TotalRecords': page['total'], 'Data': page['data']}}, index + 3, GRID, request(page['offset'])))
+            'TotalRecords': page['total'], 'Data': page['data']}}, index + 3, GRID,
+            request(page['offset'], record_id)))
     values.extend(packet({'IsSuccessful': True, 'Payload': catalog(kind)}, index + 5,
                          url, None, method='GET') for index, (kind, url) in enumerate(REFERENCES.items()))
     return values

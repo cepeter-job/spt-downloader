@@ -189,6 +189,60 @@ def test_mpn_ownership_reason_schema_rejects_arbitrary_values_without_stringifyi
     assert 'SYNTHETIC_PRIVATE_MPN_OWNERSHIP' not in json.dumps(events)
 
 
+def test_corporate_l9_detail_gate_keeps_only_reviewed_fixed_reason(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_L9_DETAIL'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('corporate.l9_detail_gate', corporate_l9_detail_gate='providers',
+                 url=secret, headers=secret, body=secret)
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'corporate.l9_detail_gate']
+    assert event.get('corporate_l9_detail_gate') == 'providers', 'Reviewed L9 gate reason was discarded'
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_corporate_l9_detail_gate_rejects_arbitrary_values_without_stringifying(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('A gate diagnostic must not stringify arbitrary values')
+    with d.session(tmp_path, 'worker') as log:
+        for value in ['SYNTHETIC_PRIVATE_L9_DETAIL', Untrusted(), True, None, [], {}]:
+            d.record('corporate.l9_detail_gate', corporate_l9_detail_gate=value)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'corporate.l9_detail_gate']
+    assert len(events) == 6
+    assert all('corporate_l9_detail_gate' not in e for e in events)
+    assert 'SYNTHETIC_PRIVATE_L9_DETAIL' not in json.dumps(events)
+
+
+def test_corporate_l10c_detail_gate_keeps_only_reviewed_fixed_reason(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_L10C_DETAIL'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate='table_metadata',
+                 url=secret, headers=secret, body=secret)
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'corporate.l10c_detail_gate']
+    assert event.get('corporate_l10c_detail_gate') == 'table_metadata', 'Reviewed L10-C gate reason was discarded'
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_corporate_l10c_detail_gate_rejects_arbitrary_values_without_stringifying(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('A gate diagnostic must not stringify arbitrary values')
+    with d.session(tmp_path, 'worker') as log:
+        for value in ['SYNTHETIC_PRIVATE_L10C_DETAIL', Untrusted(), True, None, [], {}]:
+            d.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=value)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'corporate.l10c_detail_gate']
+    assert len(events) == 6
+    assert all('corporate_l10c_detail_gate' not in e for e in events)
+    assert 'SYNTHETIC_PRIVATE_L10C_DETAIL' not in json.dumps(events)
+
+
 def test_search_schema_keeps_bounded_metadata_and_discards_request_material(tmp_path):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_SEARCH_VALUE'

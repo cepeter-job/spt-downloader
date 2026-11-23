@@ -41,7 +41,7 @@ def project(index=0, **changes):
     assert callable(helper), 'Missing source-proven populated L9 grid projector'
     source_index = index if type(index) is int and 0 <= index < 12 else 0
     options = {'index': index, 'pages': pages(source_index), 'total': Number('51'),
-        'headers': HEADERS, 'footer_spans': [[], [7, 1, 1]],
+        'headers': HEADERS, 'footer_spans': [[7, 1, 1]],
         'tax_type': 'ICT_RCIT', 'locale': 'id-ID', 'timezone_name': 'Asia/Jakarta',
         'labels': deepcopy(LABELS)}
     options.update(changes)
@@ -57,9 +57,9 @@ def test_tangible_group1_populated_rows_keep_duplicates_and_original_coordinates
     expected = ['SYNTHETIC-001', 'Synthetic tangible label', '02-2024', '1.235', '987',
         'Synthetic commercial label', 'Synthetic fiscal label', '26', 'SYNTHETIC literal note']
     assert table['headers'] == HEADERS
-    assert table['rows'] == [expected, expected, [], ['TOTAL', '51', '']]
-    assert table['footer'] == [[], ['TOTAL', '51', '']]
-    assert table['footer_spans'] == [[], [7, 1, 1]]
+    assert table['rows'] == [expected, expected, ['TOTAL', '51', '']]
+    assert table['footer'] == [['TOTAL', '51', '']]
+    assert table['footer_spans'] == [[7, 1, 1]]
     assert table['body_row_count'] == table['source_total'] == 2
     assert table['source_structure'] == {'form': 'L9', 'component': 'rshshr-citr-l9-form-grid1',
         'groups': ['HARTA BERWUJUD', 'KELOMPOK ' + str(index + 1) if index < 4 else 'KELOMPOK LAINNYA']}

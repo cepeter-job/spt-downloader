@@ -24,7 +24,8 @@ SPANS = [[[1, 4, 1, 1, 2, 1]], [[4, 1, 1, 2]] * 3]
 LABELS = {'COUNTRY_CODE': {'ZZ': 'SYNTHETIC COUNTRY'},
           'CURRENCY': {'XXX': 'SYNTHETIC CURRENCY'},
           'FOREIGN_INCOME_TYPE_CIT': {'SYNTHETIC-INCOME': 'SYNTHETIC INCOME'},
-          'TAX_TYPE_BY_OTHER_PARTIES': {'SYNTHETIC-TAX': 'SYNTHETIC TAX'}}
+          'TAX_TYPE_BY_OTHER_PARTIES': {'SYNTHETIC-TAX': 'SYNTHETIC TAX',
+                                         'ARTICLE23': 'PPh Pasal 23'}}
 ROOT = 'ListIncomeTaxWithheldByOtherParties'
 
 
@@ -63,6 +64,138 @@ def project(form, pages, footer, *, footer_wire=None, **overrides):
         return function(captured, pages=observed_pages, footer_payload=captured_footer, **options)
     finally:
         assert (captured, observed_pages, captured_footer, options) == before
+
+
+def test_absent_overseas_refund_projects_as_zero_not_refusal():
+    # No previous-year overseas refund -> OverseasRefundPreviousYear key is
+    # omitted; it reads as 0 (empty control), not a closed-shape drift.
+    form, pages, footer = inputs()
+    del form['OverseasRefundPreviousYear']
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+
+
+def test_usd_scalars_and_footer_allow_two_decimal_foreign_currency():
+    # The *Usd controls are foreign-currency amounts with a 2-decimal fraction;
+    # the whole-rupiah controls stay integer. Beyond 2 decimals still refuses.
+    form, pages, footer = inputs()
+    form['OtherPartiesIncomeTaxWithheldUsd'] = 10736.42
+    form['OtherPartiesTotalCreditUsd'] = 10736.42
+    footer['IncomeTaxUsd'] = 10736.42
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+
+
+def test_l3b_extended_rows_admit_grid_source_metadata_and_exact_footer_usd_lexeme():
+    # The pinned L3-B grid emits grid-sourced rows: IsManually false, a known
+    # TableSource, and a bounded nonzero USD lexeme (43 fractional / 28 with >2
+    # decimals in the live capture). The footer USD total keeps the portal's
+    # exact high-precision lexeme, not a 2-decimal round.
+    form, pages, footer = inputs()
+    for page in pages:
+        for row in page['data']:
+            row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
+                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
+    footer['IncomeTaxUsd'] = 10736.41742465
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+    usd = [p for p in result['provenance']
+           if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']
+    assert usd and usd[0]['value'] == '10736.41742465'
+
+
+def test_l3b_sixty_row_paged_shape_with_grid_source_metadata():
+    # The live L3-B grid is 60 distinct grid-sourced rows across six pages of
+    # ten (IsManually false, a known TableSource, a fractional USD lexeme).
+    # Verify per-page provenance (last page / last row) and the exact USD
+    # footer lexeme — the shape that actually regressed when the guard was
+    # narrowed to manual/zero/null rows.
+    form, pages, footer = inputs()
+    base = pages[0]['data'][0]
+    rows = []
+    for n in range(60):
+        row = deepcopy(base)
+        row.update({'RecordId': 'ROW-%02d' % n,
+                    'IncomeTaxUsd': 16.5 + n / 10000, 'IsManually': False,
+                    'TableSource': ('EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING')[n % 2],
+                    # Both live TaxType representations in one table: the
+                    # catalog code and the bare label without the "PPh "
+                    # prefix (source-bound to ARTICLE23).
+                    'TaxType': 'Pasal 23' if n % 3 == 0 else 'SYNTHETIC-TAX',
+                    'Index': 0, 'Action': None})
+        rows.append(row)
+    pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
+             for i in range(0, 60, 10)]
+    footer['IncomeTaxUsd'] = 10736.41742465
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert a['body_row_count'] == 2
+    assert b['body_row_count'] == 60
+    # Distinct row keys are preserved into the per-page grid provenance.
+    row_ids = {e['value'] for e in result['provenance']
+               if e.get('source') == 'grid' and e.get('path', [])[-1:] == ['RecordId']}
+    assert row_ids == {'ROW-%02d' % n for n in range(60)}
+    # The last page (index 5) carries the last row (ROW-59).
+    assert any(e.get('source') == 'grid' and e.get('page_index') == 5
+               and e.get('path') == ['Data', 9, 'RecordId'] and e.get('value') == 'ROW-59'
+               for e in result['provenance'])
+    # Both admitted grid sources survive into per-row metadata provenance.
+    sources = {e['value'] for e in result['provenance']
+               if e.get('destination', {}).get('metadata') == 'TableSource'}
+    assert sources == {'EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'}
+    # The footer USD total keeps the exact 8-decimal lexeme, not a rounded form.
+    usd = [p for p in result['provenance']
+           if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']
+    assert usd and usd[0]['value'] == '10736.41742465'
+    # Both TaxType representations project: the bare label binds through the
+    # source-bound mapping to ARTICLE23's catalog label; the code as-is.
+    # Body rows only: the footer rows (JUMLAH / KREDIT) carry no label.
+    assert {row[3] for row in b['rows'][:b['body_row_count']]} == {
+        'PPh Pasal 23', 'SYNTHETIC TAX'}
+
+
+def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
+    # Fail-closed: an unknown TableSource or a non-boolean IsManually refuses.
+    for bad in ({'TableSource': 'UNKNOWN_GRID'}, {'IsManually': 'true'}):
+        form, pages, footer = inputs()
+        for page in pages:
+            for row in page['data']:
+                row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
+                            'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None, **bad})
+        with pytest.raises(_UnsupportedMetadata):
+            project(form, pages, footer)
+
+
+def test_l3b_tax_type_binds_both_code_and_source_bound_bare_label_representations():
+    # Regression: the live L3-B grid emits TaxType in two representations in
+    # one table — the catalog code and the bare label without the "PPh "
+    # prefix ("Pasal 23"). The source-bound mapping resolves the bare label
+    # to ARTICLE23, which must still bind through the observed catalog; both
+    # representations project side by side.
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 23'
+    result = project(form, pages, footer)
+    _, b = result['tables']
+    assert b['rows'][0][3] == 'PPh Pasal 23'
+    assert b['rows'][1][3] == 'SYNTHETIC TAX'
+
+
+def test_l3b_bare_label_refuses_without_mapping_or_catalog_entry():
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 99'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, footer)
+    # The mapping resolves 'Pasal 23' to ARTICLE23; without that catalog
+    # entry the resolved code stays unbound — nothing is fabricated.
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 23'
+    labels = deepcopy(LABELS)
+    del labels['TAX_TYPE_BY_OTHER_PARTIES']['ARTICLE23']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, footer, labels=labels)
 
 
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():
@@ -164,7 +297,7 @@ def test_unproved_l3_source_arithmetic_pages_or_metadata_remains_unsupported(def
     elif defect == 'span':
         overrides['footer_spans'] = [[[4, 1, 1, 2, 1]], SPANS[1]]
     elif defect == 'missing-root-field':
-        del form['OverseasRefundPreviousYear']
+        del form['OverseasTotalNetIncome']
     elif defect == 'missing-overseas':
         del form['IncomeOverseas']
     elif defect in ('string-money', 'bool-money', 'fraction-money', 'unsafe-money'):

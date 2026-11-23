@@ -421,3 +421,18 @@ def test_empty_workbook_keeps_both_totals_numeric_and_mapping_truthful(tmp_path)
         assert reports[0]['unmapped_rows'] == reports[0]['unmapped_tables'] == 0
     finally:
         book.close()
+
+
+@pytest.mark.parametrize('payload,empty', [
+    (_corporate_json('{"TotalRecords":0,"Data":[],"Index":null}'), True),
+    ({'TaxBaseUsd': None, 'TaxBase': _corporate_json('0'), 'IncomeTax': None,
+      'IncomeTaxUsd': None}, True),
+    (_corporate_json('{"TotalRecords":2,"Data":[{}],"Index":null}'), False),
+    ({'TaxBase': _corporate_json('5'), 'IncomeTax': _corporate_json('1'),
+      'TaxBaseUsd': None, 'IncomeTaxUsd': None}, False),
+    (None, False),
+    ({'unrelated': 1}, False),
+])
+def test_empty_absent_l4_payload_only_admits_the_empty_absent_shape(payload, empty):
+    from coretax_json import _empty_absent_l4_payload
+    assert _empty_absent_l4_payload(payload) is empty

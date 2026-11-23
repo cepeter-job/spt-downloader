@@ -18,8 +18,8 @@ import support_json_corpus as corpus
 
 
 class Fixture(BaseFixture):
-    def __init__(self, browser, monkeypatch, *, migrated=False):
-        super().__init__(browser, monkeypatch)
+    def __init__(self, browser, monkeypatch, *, migrated=False, natural_refs=None):
+        super().__init__(browser, monkeypatch, natural_refs=natural_refs)
         monkeypatch.setattr(projection, 'BUILD_DIGESTS', {ASSET: self.pins[ASSET]})
         monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', self.pins[ASSET])
         current = corpus.current_form()

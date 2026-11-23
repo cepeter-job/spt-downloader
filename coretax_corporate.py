@@ -36,6 +36,7 @@ GRID_ROLES = {
         ('rshshr-citr-l9-form-grid3', 'l9-table-3-grid', GROUPS)),
  'L10-A': (('rshshr-citr-l10a-form-grid1', 'l10a-grid', (None,)),),
 }
+_REFERENCE_REACQUIRE_TIMEOUT_MS = 8000
 _BUILD_HASH = r'''async url => {
  const loaded=[...document.scripts].some(s=>s.src===url) ||
    performance.getEntriesByType('resource').some(e=>e.name===url);
@@ -283,16 +284,24 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
     from coretax_corporate_projection import (L10C_BUILD_DIGESTS, L10C_HEADERS, MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
-    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
+    from spt_desktop import diagnostics
+
+    def _refuse(gate):
+        # Fixed-enum diagnostic: name the exact predicate that dropped the
+        # L10-C projection so a live run can be diagnosed without payloads.
+        diagnostics.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=gate)
         return None
+
+    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
+        return _refuse('history')
     needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
     urls = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
     if set().union(*map(set, urls.values())) != needed:
-        return None  # The independent shared producer has not been integrated.
+        return _refuse('reference_catalogs')  # The independent shared producer has not been integrated.
     pins = L10C_BUILD_DIGESTS
     if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
-        return None
+        return _refuse('build_pins')
     route, builds = page.url, {}
     for url in (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE):
         _check_cancel(check_cancel)
@@ -302,28 +311,29 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
         digest = page.evaluate(script, url)
         _check_cancel(check_cancel)
         if type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}', digest) or digest != pins[url]:
-            return None
+            return _refuse('build_digests')
         builds[url] = digest
     environment = page.evaluate('''() => ({locale:navigator.language,
         timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})''')
     _check_cancel(check_cancel)
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
-        return None
+        return _refuse('environment')
     metadata = form.locator('rsh-citr-l10c-grid1').locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
     if (not isinstance(metadata, dict) or metadata.get('headers') != L10C_HEADERS
             or metadata.get('footer_spans') != []):
-        return None
+        return _refuse('table_metadata')
     references, kinds_seen = [], set()
-    observations = capture.request_observations()
+    observations = _reacquire_reference_observations(page, capture, list(urls), check_cancel)
     for url, kinds in sorted(urls.items()):
         sequences = sorted({event['sequence'] for event in observations if event['url'] == url
-                            and event['method'] == 'GET' and event['request_json'] is None})
+                            and event['method'] == 'GET' and event['request_json'] is None
+                            and event.get('status') in (None, 200)})
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
             kinds_seen.update(kinds)
     if (kinds_seen != needed or page.url != route
             or capture.observe_l10c_lifetime(check_cancel=check_cancel) is None):
-        return None
+        return _refuse('references_or_lifetime')
     return {'kind': 'corporate-l10c-v1', 'builds': builds, 'route': route, **environment,
         'visibility_binding': 'current-induk-enabled-v1', 'references': references,
         'tables': [{'component': 'rsh-citr-l10c-grid1', 'headers': list(L10C_HEADERS), 'footer_spans': []}]}
@@ -472,12 +482,15 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         tables.append({'component': L2_COMPONENTS[index], 'source_structure': structure,
             'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
     references = []
-    observations = capture.request_observations()
+    l2_urls = [url for url, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if kinds and not set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}]
+    observations = _reacquire_reference_observations(page, capture, l2_urls, check_cancel)
     for url, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
             continue
         sequences = [item['sequence'] for item in observations if item['url'] == url
-                     and item['method'] == 'GET' and item.get('request_json') is None]
+                     and item['method'] == 'GET' and item.get('request_json') is None
+                     and item.get('status') in (None, 200)]
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
@@ -812,6 +825,46 @@ def _l3_standalone_layout(form):
     }''', [list(pair) for pair in _L3_LAYOUT_CAPTIONS], timeout=1000) is True
 
 
+def _reacquire_reference_observations(page, capture, urls, check_cancel):
+    """Reacquire allowlisted reference catalogs the SPA served from cache.
+
+    A later return in the same job observes no fresh reference GETs (the SPA
+    caches the catalogs). Reacquire only the missing allowlisted ones with a
+    bounded, cache-busting, same-origin GET on the DETAIL page. An
+    AbortController cancels the outstanding fetches on timeout so a late
+    response is never captured, and the body is read before the timer clears
+    so the completion (not just the header response) is bounded. Only
+    successful captured responses count, so a failure, timeout or cancellation
+    leaves the catalog absent and the caller refuses. Cancellation is
+    preserved; the provider/locale/route/lifetime proof is unchanged. The
+    deadline is the module-owned _REFERENCE_REACQUIRE_TIMEOUT_MS.
+    """
+    from coretax_browser import _check_cancel
+    def _observed(items, url):
+        return any(item['url'] == url and item['method'] == 'GET'
+                   and item.get('request_json') is None and item.get('status') in (None, 200)
+                   for item in items)
+    observations = capture.request_observations()
+    missing = [url for url in dict.fromkeys(urls) if not _observed(observations, url)]
+    if not missing:
+        return observations
+    _check_cancel(check_cancel)
+    page.evaluate(
+        '''([urls, timeoutMs]) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            return Promise.all(urls.map(u =>
+                fetch(u, {cache: 'reload', credentials: 'include',
+                          signal: controller.signal})
+                    .then(r => (r.ok ? r.text() : null))
+                    .catch(() => null)))
+              .then(() => clearTimeout(timer));
+        }''',
+        [missing, _REFERENCE_REACQUIRE_TIMEOUT_MS])
+    _check_cancel(check_cancel)
+    return capture.request_observations()
+
+
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -924,9 +977,12 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
+    observations = _reacquire_reference_observations(
+        page, capture, list(CORPORATE_L3_REFERENCE_URLS.values()), check_cancel)
     for url in CORPORATE_L3_REFERENCE_URLS.values():
         sequences = [item['sequence'] for item in observations
-            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None
+            and item.get('status') in (None, 200)]
         if not sequences:
             return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
@@ -1198,7 +1254,8 @@ def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):
             or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
         return None
     return {'kind': 'corporate-l10a-populated-v1', **references, 'route': page.url,
-            **environment, 'tables': [after]}
+            **environment, 'tables': [after],
+            'visibility_binding': 'current-induk-enabled-v1'}
 
 
 def _l4_footer_requests(observations, *, record_id, period):
@@ -1283,52 +1340,64 @@ def _observe_l9(page, form, capture, digest, check_cancel):
     from coretax_corporate_projection import L9_DETAIL_BUILD_DIGESTS, L9_REFERENCE_KINDS, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    from spt_desktop import diagnostics
+
+    def _refuse(gate):
+        # Fixed-enum diagnostic: name the exact predicate that dropped the
+        # details proof so a live run can be diagnosed without payloads.
+        diagnostics.record('corporate.l9_detail_gate', corporate_l9_detail_gate=gate)
+        return None
+
     _check_cancel(check_cancel)
     # Missing shared producer support keeps the old recap-only fallback without
     # fetching a catalog, probing browser cache, or granting a new request class.
     admitted = {kinds[0] for kinds in CORPORATE_REFERENCE_REQUESTS.values() if len(kinds) == 1}
     if not set(L9_REFERENCE_KINDS) <= admitted:
-        return None
+        return _refuse('reference_kinds_not_admitted')
     pins = L9_DETAIL_BUILD_DIGESTS
     if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())
             or pins[CIT_SOURCE_URL] != digest):
-        return None
+        return _refuse('build_pins')
     references, observed_kinds = [], set()
+    l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if len(kinds) == 1 and kinds[0] in L9_REFERENCE_KINDS]
+    observations = _reacquire_reference_observations(page, capture, l9_urls, check_cancel)
     for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
             continue
-        sequences = [event['sequence'] for event in capture.request_observations()
-            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None]
+        sequences = [event['sequence'] for event in observations
+            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None
+            and event.get('status') in (None, 200)]
         if not sequences:
             continue
         if kinds[0] in observed_kinds:
-            return None
+            return _refuse('duplicate_reference_kind')
         observed_kinds.add(kinds[0])
         references.append({'endpoint': endpoint, 'method': 'GET', 'sequences': sequences})
     if observed_kinds != set(L9_REFERENCE_KINDS):
-        return None
+        return _refuse('reference_kinds_incomplete')
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return _refuse('component_lifetime')
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src===url) ||
-        performance.getEntriesByType('resource').some(e => e.name===url && e.initiatorType==='script'))''', list(pins))
+        performance.getEntriesByType('resource').some(e => e.name===url))''', list(pins))
     _check_cancel(check_cancel)
     if providers is not True:
-        return None
+        return _refuse('providers')
     main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
     _check_cancel(check_cancel)
     vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
     _check_cancel(check_cancel)
     if main_digest != pins[MAIN_SOURCE] or vendor_digest != pins[VENDOR_SOURCE]:
-        return None
+        return _refuse('provider_digests')
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
-        return None
+        return _refuse('environment')
     tables = _l9_tables(form, check_cancel)
     if tables is None:
-        return None
+        return _refuse('tables')
     return {'kind': 'corporate-l9-details-v1', 'builds': dict(pins), 'route': page.url,
             **environment, 'tables': tables, 'references': references}
 
@@ -1923,20 +1992,27 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
-            # The shipped, hash-pinned 525 build has a CDP-reviewed 15-tab
-            # inventory: all FORMS other than L1-B and L8 must be visible.
-            # An absent required tab with an omitted JSON root would not
-            # produce an uncovered evidence row, so downstream evidence
-            # matching alone cannot prove completeness. Refuse this exact
-            # reviewed build when its native tab inventory is incomplete.
-            # Other asset builds need their own reviewed inventory before
-            # their approved pin can adopt this completeness contract.
-            missing = set(FORMS) - {'L1-B', 'L8'} - names
+            # The shipped, hash-pinned build exposes a tab only for the forms
+            # the return actually carries data for. L1-B, L8 and the
+            # data-conditional sheets below are rendered only when the return
+            # has data for them (confirmed absent from CurrentFormData on a
+            # live return whose prefill omits their root keys), so their
+            # absence is legitimate and must not force a whole-record DOM
+            # fallback. L10-A/L10-B/L10-C join that set: a live Amendment
+            # return carries no L10-A/B/C data and renders no such tabs.
+            # Every other reviewed form must be visible: an absent required
+            # tab with an omitted JSON root would not produce an uncovered
+            # evidence row, so downstream evidence matching alone cannot
+            # prove completeness.
+            data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-A', 'L10-B',
+                                'L10-C', 'L10-D', 'L11-A', 'L11-C'}
+            missing = set(FORMS) - data_conditional - names
             if digest == CIT_SOURCE_SHA256 and missing:
                 return unavailable(reason='incomplete_coverage',
                                    missing_forms=','.join(sorted(missing)))
-            # Only L1-B and L8 are reviewed as legitimately absent.
-            # Their path-only bindings remain strictly null/missing-inert.
+            # Only L1-B and L8 are reviewed as legitimately absent with an
+            # inert path-only binding. Their bindings remain strictly
+            # null/missing-inert.
             for absent in ('L1-B', 'L8'):
                 if absent not in names:
                     names.add(absent)

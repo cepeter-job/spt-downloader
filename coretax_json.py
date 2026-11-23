@@ -659,7 +659,16 @@ _CIT_NULL_OMISSIONS = frozenset({'CalculationAfterTaxIncome5Years',
 # New data-bearing top-level keys, validated as source evidence when present
 # (doc metadata never proves PDF custody; IDs/provenance are bound, not logged).
 _CIT_METADATA_KEYS = frozenset({'ActualMonths', 'AuditOpinion', 'FinancialStatement',
-    'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission'})
+    'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission', 'FacilityRegisters'})
+# Data-conditional form roots. The SPA omits the tab and serializes the root
+# as an explicit null when the return carries no data for the form, so a null
+# root with no observed path is inert. A data-bearing root still requires its
+# observed path (fail-closed).
+_CIT_DATA_CONDITIONAL_ROOTS = frozenset({
+    'L1bFormData', 'CalculationFacilitiesIncomeTaxRateReduction',
+    'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject',
+    'CalculationOfFiscalLossCompensation', 'DeclarationTransactionRelatedParties',
+    'L10bFormData', 'L10cFormData', 'L10dFormData', 'L11AFormData', 'L11CFormData'})
 CORPORATE_L4_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid'
 CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
@@ -1139,6 +1148,19 @@ def _corporate_integer(value):
     raise JsonSafetyError('Native corporate count or year is not a nonnegative JSON integer')
 
 
+def _empty_absent_l4_payload(payload):
+    """True for the empty grid/footer an absent (data-conditional) L4 fetches."""
+    if not isinstance(payload, dict):
+        return False
+    if 'TotalRecords' in payload:
+        return (isinstance(payload.get('TotalRecords'), _CorporateNumber)
+                and str(payload['TotalRecords']) == '0' and not payload.get('Data'))
+    keys = {'TaxBase', 'IncomeTax', 'TaxBaseUsd', 'IncomeTaxUsd'}
+    return set(payload) == keys and all(
+        value is None or (isinstance(value, _CorporateNumber) and str(value) == '0')
+        for value in payload.values())
+
+
 def _corporate_primary(payload, record, selected, scope, paths, provenance):
     fields = selected['native_fields']
     if 'TIN' in payload and (type(payload['TIN']) is not str or payload['TIN'] != scope[0]):
@@ -1275,10 +1297,14 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             'sha256': hashlib.sha256(prefill_id.encode()).hexdigest()}
         _corporate_rows(prefill_id, ('PrefillFromId',), metadata_rows)
     if 'ElectronicReceiptSubmission' in root:
-        if type(root['ElectronicReceiptSubmission']) is not bool:
+        receipt = root['ElectronicReceiptSubmission']
+        # Explicit null is the live "no receipt yet" source value and is
+        # admitted as an empty metadata cell; any non-null value must be a
+        # strict boolean (no 0/1 or string coercions).
+        if receipt is not None and type(receipt) is not bool:
             raise _UnsupportedMetadata('unverified_corporate_receipt_status')
-        metadata['ElectronicReceiptSubmission'] = root['ElectronicReceiptSubmission']
-        _corporate_rows(root['ElectronicReceiptSubmission'], ('ElectronicReceiptSubmission',), metadata_rows)
+        metadata['ElectronicReceiptSubmission'] = receipt
+        _corporate_rows(receipt, ('ElectronicReceiptSubmission',), metadata_rows)
     # A declared disabled panel carries no DOM proof; its JSON root is bound
     # only when the source value is exactly null/missing (this also gives the
     # inert null evidence row a pointer). Any other value refuses closed,
@@ -1322,6 +1348,12 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     for key, value in root.items():
         if (key not in _CIT_CONTROLS and key not in _CIT_METADATA_KEYS
                 and key not in _CIT_NULL_OMISSIONS):
+            # A null data-conditional form root with no observed path is inert:
+            # the SPA omits the tab and serializes the root as an explicit
+            # null. A data-bearing root still requires its observed path.
+            if (value is None and key in _CIT_DATA_CONDITIONAL_ROOTS
+                    and not any(path[:1] == [key] for path, _ in paths)):
+                continue
             _corporate_rows(value, (key,), evidence)
     pointers = [_corporate_pointer(path) for path, _ in paths]
     if any(not any(row[0] == pointer or row[0].startswith(pointer + '/') for pointer in pointers)
@@ -1622,6 +1654,14 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             elif (urlparse(ctx['url']).path.endswith('/getinfotin') and ctx['status'] == 400
                   and isinstance(envelope, dict) and envelope.get('IsSuccessful') is False and payload is None):
                 event['informational_failure'] = True
+            elif (ctx['url'] in (CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL) and success
+                  and _empty_absent_l4_payload(payload)):
+                # L4 is data-conditional: an absent L4 still fetches an empty
+                # grid page and a zero footer with no observed binding. Keep the
+                # original empty payloads for replay like the L4 footer; they are
+                # never projected without an L4 section. A NON-empty unbound L4
+                # response still fails closed below (data without an observed tab).
+                auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
             else:
                 raise _UnsupportedMetadata('unbound_corporate_source_response')
         except _UnsupportedMetadata as error:

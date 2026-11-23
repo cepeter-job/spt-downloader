@@ -17,8 +17,9 @@ import support_json_corpus as corpus
 
 
 def open_selected(fixture, capture):
-    page, popup = driver.open_return_readonly(fixture.page, fixture.page.locator('tbody tr'),
-        corpus.TAXPAYER_ID, corpus.RECORD_ID, json_capture=capture)
+    row = fixture.page.locator('tbody tr[data-record-id="' + fixture.record['record_id'] + '"]')
+    page, popup = driver.open_return_readonly(fixture.page, row,
+        corpus.TAXPAYER_ID, fixture.record['record_id'], json_capture=capture)
     assert page is fixture.page and popup is False
     page.wait_for_function('window.primaryDone===true')
     assert page.locator('#panel-0').is_visible()

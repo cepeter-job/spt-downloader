@@ -106,6 +106,18 @@ def test_affiliate_null_singleton_is_not_an_initial_zero_reduce(count, footer):
         assert b['rows'][0][2:] == [''] * 10
 
 
+def test_absent_investment_list_projects_empty_affiliate_table():
+    # A company with no affiliates omits InvestmentList entirely; that is an
+    # empty affiliate table, not a shape drift. Shareholders + the five totals
+    # stay mandatory and unknown extras still refuse (closed-inventory guard).
+    value = form(ListOfShareholders=[shareholder()])
+    del value['InvestmentList']
+    result = owner(value)
+    a, b = result['tables']
+    assert a['body_row_count'] == 1
+    assert b['body_row_count'] == 0
+
+
 def test_shareholder_null_defaults_differ_from_affiliate_nulls_and_subposition_is_unused():
     row = shareholder(CountryCode=None, TIN=None, Position=None,
                       SubPosition='NOT A DISPLAY LABEL', PaidInCapital=None,

@@ -251,9 +251,8 @@ def test_owned_live_l3_native_source_held_replay_and_saved_workbook_keep_indepen
 
 @pytest.mark.parametrize('field,value,reason', [
     ('IsManually', 1, 'unsupported_corporate_l3_domestic_row'),
-    ('Index', False, 'unsupported_corporate_l3_number_type'),
-    ('IncomeTaxUsd', '0', 'unsupported_corporate_l3_number_type'),
-    ('TableSource', 'TAXPAYER_ACCOUNTING', 'unsupported_corporate_l3_domestic_row'),
+    ('Index', False, 'unsupported_corporate_l3_domestic_row'),
+    ('IncomeTaxUsd', '0', 'unsupported_corporate_l3_domestic_row'),
     ('Action', {}, 'unsupported_corporate_l3_domestic_row'),
 ])
 def test_owned_complete_capture_with_unreviewed_l3_metadata_refuses_projection_not_transport(

@@ -131,7 +131,7 @@ def test_c_consumer_refuses_unproved_capabilities_without_label_or_control_loss(
     assert not result['eligible'] and result['sections'] == []
 
 
-@pytest.mark.parametrize('defect', [None, 'environment', 'provider', 'reference'])
+@pytest.mark.parametrize('defect', [None, 'environment', 'provider', 'reference', 'history', 'table'])
 def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_custody(
         consumer_contract, defect):
     import coretax_corporate as observer
@@ -141,13 +141,20 @@ def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_cu
     class Node:
         def __init__(self, selector=''): self.selector = selector
         def locator(self, selector): return Node(selector)
-        def count(self): return 2 if self.selector.startswith('p-radiobutton') else 1
+        def count(self):
+            if defect == 'history' and 'PeriodYear' in self.selector:
+                return 0
+            return 2 if self.selector.startswith('p-radiobutton') else 1
         def evaluate(self, script):
+            if defect == 'table':
+                return {'headers': ['WRONG'], 'footer_spans': []}
             return {'headers': list(projection.L10C_HEADERS), 'footer_spans': []}
 
     class Page:
         url = ROUTE
-        def evaluate(self, script, url=None):
+        def evaluate(self, script, url=None, **kwargs):
+            if 'AbortController' in script:
+                return None
             if url is not None:
                 return None if defect == 'provider' else projection.L10C_BUILD_DIGESTS[url]
             return {'locale': 'en-US' if defect == 'environment' else 'id-ID', 'timezone': 'Asia/Jakarta'}

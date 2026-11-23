@@ -61,7 +61,7 @@ def bindings(urls):
     for index in range(12):
         structure = projection.l9_grid_structure(index)
         tables.append({'component': structure['component'], 'source_structure': structure,
-                       'headers': list(HEADERS), 'footer_spans': [[], [7, 1, 1]]})
+                       'headers': list(HEADERS), 'footer_spans': [[7, 1, 1]]})
     result[1]['projection'] = {'kind': 'corporate-l9-details-v1',
         'builds': dict(projection.L9_DETAIL_BUILD_DIGESTS), 'route': ROUTE,
         'locale': 'id-ID', 'timezone': 'Asia/Jakarta', 'tables': tables,
@@ -198,7 +198,7 @@ def test_details_proof_and_original_custody_refuse_closed_defects(shared_catalog
     elif defect == 'headers':
         proof['tables'][4]['headers'] = HEADERS[:-1]
     elif defect == 'spacer':
-        proof['tables'][4]['footer_spans'] = [[7, 1, 1]]
+        proof['tables'][4]['footer_spans'] = [[], [7, 1, 1]]
     elif defect == 'missing_reference':
         proof['references'].pop()
     elif defect == 'wrong_sequence':

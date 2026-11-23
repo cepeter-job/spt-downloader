@@ -13,52 +13,125 @@ import coretax_corporate_projection as projection
 from coretax_json import JsonSafetyError, adapt_corporate_detail, has_audit_dump_tables
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture as SpaFixture, ASSET
+from l3_observer_fixture import l3_form_html
 from test_corporate_l1d_observer import open_selected
 from test_corporate_l1d_native import DETAIL
 from test_corporate_l2_owner import populated
 from test_corporate_l2_projection import wire
-from test_corporate_l11c_native import COUNTRY, catalog
+from test_corporate_l11c_native import COUNTRY, catalog, related_person_catalog
+from test_corporate_l3_native import (GRID as L3_GRID, FOOTER as L3_FOOTER,
+    REFERENCES as L3_REFERENCES, packets as l3_packets, request)
+from test_corporate_l3_projection import ROOT as L3_ROOT, inputs as l3_inputs
 from test_json_hybrid_native import browser as browser
 import support_json_corpus as corpus
 
 
 A_HEADERS = ['NO.', 'NAMA', 'ALAMAT', 'NEGARA', 'NPWP/NIK', 'Jabatan',
              'Modal Disetor / NILAI (Rp)', 'Modal Disetor / %', 'DIVIDEN/PEMBAGIAN LABA(Rp)']
+RELATED_PERSON = corpus.ORIGIN + '/referencedata/api/currentreferencedata/id-ID/RELATED_PERSON_TYPE'
 GROUPS = [
     'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
     'B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI']
 
 
 class Fixture(SpaFixture):
-    def __init__(self, browser, monkeypatch, *, defect=None, oracle=False):
+    def __init__(self, browser, monkeypatch, *, defect=None, oracle=False, model='Normal',
+                 context=None, record_id=None, position=None, l3=False, rows=None):
         self.oracle = oracle
-        super().__init__(browser, monkeypatch, defect=defect)
+        self.l3 = l3
+        self.l3_footer_raw = self.l3_grid_raw = self.l3_reference_raw = None
+        self.position = position if position is not None else (
+            'SYN_REL_A' if defect == 'cached-references' else None)
+        natural_refs = (list(dict.fromkeys([COUNTRY, RELATED_PERSON]
+            + list(L3_REFERENCES.values()))) if l3
+            else ([COUNTRY] if defect != 'cached-references' else []))
+        super().__init__(browser, monkeypatch, defect=defect, model=model, context=context,
+                         record_id=record_id, rows=rows, natural_refs=natural_refs)
+        # The L2-only document keeps its legacy natural COUNTRY_CODE GET (the
+        # SPA issues it on the detail load); the cache-miss defect observes
+        # none of them, so the bounded re-fetch restores the catalogs.
         monkeypatch.setattr(projection, 'L2_BUILD_DIGESTS', self.pins, raising=False)
+        if l3:
+            monkeypatch.setattr(projection, 'L3_BUILD_DIGESTS', self.pins, raising=False)
         value = corpus.current_form()
+        value['ReturnSheetRecordIdentifier'] = self.record['record_id']
         l2 = populated()
-        # Position transport is separately owned. This end-to-end admitted
-        # subset uses literal-null Position, not a fake catalog or raw code.
-        # Non-null job descriptions are covered by the pure owner tests and
-        # remain blocked until the shared producer's reviewed transport lands.
+        # Position transport is separately owned. The default end-to-end subset
+        # uses literal-null Position; a populated case uses a real code so the
+        # (re-)fetched nonempty catalog proves binding a Position label.
         for row in l2['ListOfShareholders']:
-            row['Position'] = None
+            row['Position'] = self.position
             row['CountryCode'] = 'SYN_COUNTRY_A'
         for row in l2['InvestmentList']:
             row['CountryCode'] = 'SYN_COUNTRY_A'
         value['ListOfOwnership'] = wire(l2)
-        self.raw = corpus.wire({'IsSuccessful': True, 'Payload': {
+        model_value = 'NORMAL' if model == 'Normal' else 'AMENDMENT'
+        payload = {'IsSuccessful': True, 'Payload': {
             'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
-            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': model_value,
             'PreviousFormData': None, 'LastSubmittedFormData': None,
             'RelatedTaxpayers': [{'Name': 'SYNTHETIC PREFILL MUST NOT WIN'}],
-            'CurrentFormData': corpus.wire(value)}}).encode()
+            'CurrentFormData': corpus.wire(value)}}
+        if l3:
+            # The combined return also carries the L3-B data-conditional
+            # content: the L3 overseas form plus the owned grid source.
+            l3_form, _, _ = l3_inputs()
+            value['MainFormData']['IsIncomeTaxOverseas'] = 1
+            value[L3_ROOT] = l3_form
+            payload['Payload']['IsIncomeTaxOverseas'] = 1
+            payload['Payload']['CurrentFormData'] = corpus.wire(value)
+        self.raw = corpus.wire(payload).encode()
+        if l3:
+            l3_raw = l3_packets(model, record_id=self.record['record_id'])
+            self.l3_footer_raw = l3_raw[1]['body']
+            self.l3_grid_raw = {0: l3_raw[2]['body'], 10: l3_raw[3]['body']}
+            self.l3_reference_raw = {url: l3_raw[index + 4]['body']
+                for index, url in enumerate(L3_REFERENCES.values())}
 
     def route(self, route):
-        if route.request.url == COUNTRY:
-            self.requests.append((route.request.url, route.request.method))
-            assert route.request.method == 'GET' and route.request.post_data is None
+        req = route.request
+        if self.l3 and self.l3_grid_raw is not None and req.url == L3_GRID:
+            self.requests.append((req.url, req.method))
+            assert req.method == 'POST' and req.post_data_json in (
+                request(0, self.record['record_id']), request(10, self.record['record_id']))
             return route.fulfill(content_type='application/json',
-                body=corpus.wire({'IsSuccessful': True, 'Payload': catalog()}))
+                body=self.l3_grid_raw[req.post_data_json['First']])
+        if self.l3 and self.l3_footer_raw is not None and req.url == L3_FOOTER:
+            self.requests.append((req.url, req.method))
+            assert req.method == 'POST' and req.post_data_json == {
+                'ReturnSheetRecordId': self.record['record_id']}
+            return route.fulfill(content_type='application/json', body=self.l3_footer_raw)
+        if req.url == COUNTRY:
+            self.requests.append((req.url, req.method))
+            assert req.method == 'GET' and req.post_data is None
+            payload = catalog()
+            if self.l3:
+                # One shared COUNTRY_CODE catalog serves both consumers: the
+                # L2 country label and the L3 overseas ZZ label.
+                payload[0]['Details'].append({'Code': 'ZZ', 'CodeDescription': 'SYNTHETIC COUNTRY',
+                                              'ValidFrom': None, 'ValidTo': None})
+            return route.fulfill(content_type='application/json',
+                body=corpus.wire({'IsSuccessful': True, 'Payload': payload}))
+        if req.url == RELATED_PERSON:
+            # The L2 owner needs COUNTRY_CODE + RELATED_PERSON_TYPE; a later
+            # return reacquires the cached catalogs, so serve both here. A
+            # populated case serves a NONEMPTY catalog so the (re-)fetch
+            # proves binding a real Position label, not an empty placeholder.
+            self.requests.append((req.url, req.method))
+            assert req.method == 'GET' and req.post_data is None
+            payload = related_person_catalog()
+            if self.defect == 'cached-references' or self.position:
+                payload = [{'ReferenceDataType': 'RELATED_PERSON_TYPE', 'language': 'id-ID',
+                            'Details': [{'Code': 'SYN_REL_A',
+                                         'CodeDescription': 'SYNTHETIC RELATED PERSON A'}]}]
+            return route.fulfill(content_type='application/json',
+                body=corpus.wire({'IsSuccessful': True, 'Payload': payload}))
+        if (self.l3 and self.l3_reference_raw is not None
+                and req.url in self.l3_reference_raw and req.url not in (COUNTRY, RELATED_PERSON)):
+            self.requests.append((req.url, req.method))
+            assert req.method == 'GET' and req.post_data is None
+            return route.fulfill(content_type='application/json',
+                body=self.l3_reference_raw[req.url])
         return super().route(route)
 
     def document(self):
@@ -66,10 +139,42 @@ class Fixture(SpaFixture):
         # Only the test's separate post-native DOM oracle enables value reads.
         # Every production observer/capture call still runs with the trap armed.
         source = source.replace('if(owner&&(', 'if(!window.oracleRead&&owner&&(')
-        return source.replace('.then(()=>window.primaryDone=true)',
-            '.then(()=>fetch(' + json.dumps(COUNTRY) + ')).then(r=>r.json()).then(()=>window.primaryDone=true)')
+        if not self.l3:
+            # The legacy L2-only document: its natural COUNTRY_CODE GET (all
+            # defects except the cache-miss one, which issues none) now runs
+            # through the page-level SPA cache registered in __init__.
+            return source
+        # The combined document carries the L3 form: L3 block styles, the
+        # paginator click allowance and the per-record L3 source script. The
+        # natural reference GETs run through the page-level SPA cache, so a
+        # later return in the same document observes none of them.
+        source = source.replace('</head>', '<style>rshshr-citr-l3-form,rsh-citr-l3-grid1,'
+            'rshshr-citr-l3-grid2,ui-grid,ui-grid-offline{display:block}</style></head>')
+        source = source.replace('!e.target.closest("a[role=tab]"))window.forbiddenClicks++;',
+            '!e.target.closest("a[role=tab]")&&!e.target.closest(".p-paginator button"))window.forbiddenClicks++;')
+        bait = json.dumps('<td>SYNTHETIC BODY BAIT<input value="SYNTHETIC INPUT"></td>' * 8)
+        script = ('<script>window.l3Started=false;window.l3Done=false;window.l3FooterDone=false;'
+            'window.l3FooterReplies=0;const baseShowL3=window.show;window.show=function(i){'
+            'baseShowL3(i);if(i===2&&!window.l3Started){window.l3Started=true;startL3();}};'
+            'function fetchFooterL3(){return fetch(' + json.dumps(L3_FOOTER) + ',{method:"POST",'
+            'headers:{"Content-Type":"application/json"},body:JSON.stringify({ReturnSheetRecordId:'
+            'window.__sptCurrentRecord})}).then(r=>r.json()).then(()=>{window.l3FooterReplies++;'
+            'window.l3FooterDone=true;});}'
+            'function moveL3(first){const req={ReturnSheetRecordId:window.__sptCurrentRecord,'
+            'PeriodYear:"2025",First:first,Rows:10,SortField:"WithholdingSlipsDate",SortOrder:1,'
+            'Filters:[],LanguageId:"id-ID"};return fetch(' + json.dumps(L3_GRID) + ',{method:"POST",'
+            'headers:{"Content-Type":"application/json"},body:JSON.stringify(req)})'
+            '.then(r=>r.json()).then(()=>{const grid=document.querySelector("rshshr-citr-l3-grid2");'
+            'if(!grid)return;grid.querySelector(".p-paginator-current").textContent='
+            'first===0?"1 of 2":"2 of 2";grid.querySelector(".p-paginator-prev").disabled=first===0;'
+            'grid.querySelector(".p-paginator-next").disabled=first!==0;'
+            'grid.querySelector("tbody").innerHTML=("<tr>"+' + bait + '+"</tr>")'
+            '.repeat(first===0?10:2);window.l3Done=true;});}'
+            'function startL3(){fetchFooterL3();moveL3(0);}</script>')
+        return source.replace('</body>', script + '</body>')
 
-    def detail(self):
+    def _l2_form_html(self):
+        """The rshshr-citr-l2-form fragment the SPA renders for this return."""
         tables = []
         for index, (headers, spans) in enumerate(((A_HEADERS, [1, 5, 1, 1, 1]),
                 (projection.L2_AFFILIATE_HEADERS, [1, 5, 1, 2, 1, 2]))):
@@ -109,21 +214,44 @@ class Fixture(SpaFixture):
                 + '">' + html.escape(value) + '</td>' for span, value in zip(spans, footer))
                 + '</tr></tfoot></table></p-table></ui-grid-offline></' + owner
                 + '></div></p-accordiontab>')
-        tabs = ''.join('<li><a role="tab" aria-controls="panel-' + str(i)
-            + '" href="#" onclick="show(' + str(i) + ');return false">' + name + '</a></li>'
-            for i, name in enumerate(('Induk', 'L2')))
-        return ('<rshshr-corporate-income-tax-return><div class="main-content"><div class="p-tabview">'
-            '<ul class="p-tabview-nav">' + tabs + '</ul><div class="p-tabview-panels">'
-            '<div class="p-tabview-panel" role="tabpanel" id="panel-0"><rshshr-citr-main-form>'
-            '<label>SYNTHETIC PLACEHOLDER</label></rshshr-citr-main-form></div>'
-            '<div class="p-tabview-panel" role="tabpanel" id="panel-1" style="display:none">'
-            '<rshshr-citr-l2-form style="display:block"><h2>DAFTAR KEPEMILIKAN</h2>'
+        return ('<rshshr-citr-l2-form style="display:block"><h2>DAFTAR KEPEMILIKAN</h2>'
             '<p-panel><span class="p-panel-title">HEADER</span>'
             '<label>Tahun Pajak/Bagian Tahun Pajak</label><input formcontrolname="TaxPeriodYear">'
             + ('' if self.defect == 'header-control' else
                '<label>Nomor Identitas WP</label><input formcontrolname="CollectorTin">')
-            + '</p-panel><p-accordion>' + ''.join(tables) + '</p-accordion></rshshr-citr-l2-form>'
-            '</div></div></div></div></rshshr-corporate-income-tax-return>')
+            + '</p-panel><p-accordion>' + ''.join(tables) + '</p-accordion></rshshr-citr-l2-form>')
+
+    @staticmethod
+    def _tabview(tabs, panels):
+        return ('<rshshr-corporate-income-tax-return><div class="main-content"><div class="p-tabview">'
+            '<ul class="p-tabview-nav">' + tabs + '</ul><div class="p-tabview-panels">'
+            + panels + '</div></div></div></rshshr-corporate-income-tax-return>')
+
+    def detail(self):
+        tabs = ''.join('<li><a role="tab" aria-controls="panel-' + str(i)
+            + '" href="#" onclick="show(' + str(i) + ');return false">' + name + '</a></li>'
+            for i, name in enumerate(('Induk', 'L2')))
+        panels = ('<div class="p-tabview-panel" role="tabpanel" id="panel-0"><rshshr-citr-main-form>'
+            '<label>SYNTHETIC PLACEHOLDER</label></rshshr-citr-main-form></div>'
+            '<div class="p-tabview-panel" role="tabpanel" id="panel-1" style="display:none">'
+            + self._l2_form_html() + '</div>')
+        return self._tabview(tabs, panels)
+
+    def detail_combined(self):
+        """Induk + L2 + L3 tab view for the combined two-return document."""
+        tabs = ''.join('<li><a role="tab" aria-controls="panel-' + str(i)
+            + '" href="#" onclick="show(' + str(i) + ');return false">' + name + '</a></li>'
+            for i, name in enumerate(('Induk', 'L2', 'L3')))
+        panels = ('<div class="p-tabview-panel" role="tabpanel" id="panel-0"><rshshr-citr-main-form>'
+            '<label>SYNTHETIC PLACEHOLDER</label></rshshr-citr-main-form></div>'
+            '<div class="p-tabview-panel" role="tabpanel" id="panel-1" style="display:none">'
+            + self._l2_form_html() + '</div>'
+            '<div class="p-tabview-panel" role="tabpanel" id="panel-2" style="display:none">'
+            + l3_form_html(None) + '</div>')
+        return self._tabview(tabs, panels)
+
+    def _detail_fragment(self):
+        return self.detail_combined() if self.l3 else self.detail()
 
 
 @pytest.mark.parametrize('oracle', [False, True], ids=['business-read-trap', 'independent-DOM-oracle'])
@@ -315,3 +443,116 @@ def test_unproved_native_owner_keeps_quarantine_or_whole_record_fallback(browser
             assert page.evaluate('window.businessReads') == 0
     finally:
         fixture.close()
+
+
+def test_cached_l2_references_are_reacquired(browser, tmp_path, monkeypatch):
+    # A later return in the same job observes no fresh reference GETs (the SPA
+    # serves COUNTRY_CODE + RELATED_PERSON_TYPE from cache). The observer
+    # reacquires them with a bounded cache-busting GET; the L2 owner is
+    # reconciled against both catalogs and the record stays eligible.
+    fixture = Fixture(browser, monkeypatch, defect='cached-references')
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[ASSET])
+            assert forms is not None
+            binding, = [f for f in forms if f['name'] == 'L2']
+            endpoints = {r['endpoint'] for r in binding['projection']['references']}
+            assert endpoints == {COUNTRY, RELATED_PERSON}
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
+            assert page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
+
+
+def _assert_projected_labels(result):
+    """Exact label projections: the nonempty catalogs bind both returns."""
+    l2, = [s for s in result['sections'] if s['name'] == 'L2']
+    for table in l2['tables']:
+        for row in [r for r in table['rows'] if r[1] != 'JUMLAH']:
+            # Body rows only: the footer JUMLAH row carries totals, not labels.
+            assert 'SYNTHETIC COUNTRY LABEL' in row
+    shareholders = [r for r in l2['tables'][0]['rows'] if r[1] != 'JUMLAH']
+    for row in shareholders:
+        assert row[5] == 'SYNTHETIC RELATED PERSON A'
+    l3, = [s for s in result['sections'] if s['name'] == 'L3']
+    assert [t['body_row_count'] for t in l3['tables']] == [2, 12]
+    assert l3['tables'][0]['rows'][0][2] == 'SYNTHETIC COUNTRY'
+    assert l3['tables'][1]['rows'][0][3] == 'SYNTHETIC TAX'
+
+
+def test_two_return_l2_reference_reacquired_with_populated_catalog(browser, tmp_path, monkeypatch):
+    # True two-record, same-document SPA integration: ONE page carries both
+    # returns of the same taxpayer (Normal record A, then Amendment record B).
+    # The SPA catalog cache is page-level and persists through the
+    # list/detail/list/detail transitions: the 1st return observes every
+    # reference catalog naturally; after the list restore the 2nd return
+    # observes NO natural reference GETs, so the bounded cache-busting
+    # re-fetch (cache:'reload', AbortController) restores them. The two
+    # records have distinct record/route/primary IDs and distinct capture
+    # attempts, the nonempty Position catalog binds the same label on both
+    # returns, and the L3-B grid projects populated rows on the 2nd return.
+    # Separate missing/failed-catalog negatives stay in the L2/L3 fixtures.
+    rid1, rid2 = '00000000-0000-4000-8000-000000000021', '00000000-0000-4000-8000-000000000022'
+    first = Fixture(browser, monkeypatch, model='Normal', record_id=rid1,
+                    rows=[rid1, rid2], position='SYN_REL_A', l3=True)
+    try:
+        with DetailJsonCapture(first.context, first.page, first.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(first, capture)
+            first_forms = observer.observe_forms(page, first.record, corpus.SCOPE, capture,
+                approved_digest=first.pins[ASSET])
+            assert first_forms is not None
+            assert {f['name'] for f in first_forms} >= {'L2', 'L3'}
+            capture.drain()
+            bodies1 = list(capture.iter_bodies())
+            first_result = adapt_corporate_detail(bodies1, first.record, corpus.SCOPE, first_forms)
+            assert first_result['eligible'], first_result['reason']
+            _assert_projected_labels(first_result)
+            # 1st return: every catalog is observed by a NATURAL GET (the
+            # SPA issues no cache-busting re-fetch for a fresh return).
+            log1 = page.evaluate('window.__sptFetchLog.filter(e => e.url.includes("/referencedata/"))')
+            assert {e['url'] for e in log1} == set(first.natural_refs)
+            assert all(e['cache'] is None for e in log1)
+            assert all(b['context']['record_id'] == rid1 for b in bodies1)
+        first.context.unroute('**/*', first.route)
+        page.evaluate('window.__sptFetchLog = []')
+        second = Fixture(browser, monkeypatch, model='Amendment 002', record_id=rid2,
+                         position='SYN_REL_A', l3=True, context=first.context)
+        with DetailJsonCapture(second.context, second.page, second.record, corpus.SCOPE, tmp_path) as capture2:
+            page = open_selected(second, capture2)
+            forms = observer.observe_forms(page, second.record, corpus.SCOPE, capture2,
+                approved_digest=second.pins[ASSET])
+            assert forms is not None
+            binding, = [f for f in forms if f['name'] == 'L2']
+            assert {r['endpoint'] for r in binding['projection']['references']} == {
+                COUNTRY, RELATED_PERSON}
+            l3_binding, = [f for f in forms if f['name'] == 'L3']
+            assert l3_binding['projection']['references']
+            capture2.drain()
+            bodies2 = list(capture2.iter_bodies())
+            result = adapt_corporate_detail(bodies2, second.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
+            _assert_projected_labels(result)
+            # 2nd return: the SPA served every catalog from its page-level
+            # cache, so no natural GET occurred; each observed catalog GET is
+            # a cache-busting re-fetch (cache:'reload'), including the L3
+            # COUNTRY_CODE catalog reacquired by the L2 consumer.
+            log2 = page.evaluate('window.__sptFetchLog.filter(e => e.url.includes("/referencedata/"))')
+            assert {e['url'] for e in log2} == set(second.natural_refs)
+            assert all(e['cache'] == 'reload' for e in log2)
+            # Distinct-record custody: separate capture attempts, record IDs
+            # and primary routes; no source packet of one return leaks into
+            # the other's capture.
+            assert capture.attempt != capture2.attempt
+            assert all(b['context']['record_id'] == rid2 and
+                       b['context']['attempt'] == capture2.attempt for b in bodies2)
+            assert all(b['context']['attempt'] == capture.attempt for b in bodies1)
+            assert first.raw not in [b['body'] for b in bodies2]
+            assert second.raw not in [b['body'] for b in bodies1]
+            assert all(rid1 not in b['context'].get('frame_url', '') for b in bodies2)
+            assert page.evaluate('window.businessReads') == 0
+    finally:
+        first.context.close()
