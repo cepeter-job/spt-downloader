@@ -2909,6 +2909,10 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     # tidak dicampur dengan sebagian nilai DOM dan dianggap satu capture utuh.
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
+    # Custody completeness (the JSON evidence) and projection completeness (the
+    # reviewed worksheet projection) are independent: a complete custody capture
+    # whose sections still carry an unprojected form is not a native source.
+    projection_complete = eligible
     if eligible and corporate:
         # Capture completeness is not template completeness: a form that still
         # carries the generic payload dump was never projected into the
@@ -2917,11 +2921,13 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         if has_audit_dump_tables((decoded or {}).get('sections') or (),
                                  provenance=(decoded or {}).get('provenance')):
             eligible = False
+            projection_complete = False
     source_reason = ('native_verified' if eligible else
                      'unsupported_tax' if not corporate and not masa else
                      'forms_unavailable' if forms is None else
                      'capture_incomplete' if not manifest['complete'] else
-                     'adapter_ineligible' if not decoded['eligible'] else 'coverage_incomplete')
+                     'adapter_ineligible' if not decoded['eligible'] else
+                     'projection_incomplete' if not projection_complete else 'coverage_incomplete')
     strict = detail_source == 'json-only'
     source_used = 'json' if eligible else 'none' if strict else 'dom'
     diagnostics.record('detail.source', source_requested=detail_source,
@@ -2930,6 +2936,7 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
              'capture': manifest}
     if decoded is not None:
         audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
+    audit['projection'] = {'complete': projection_complete}
     if eligible:
         if corporate:
             result = capture_financial_detail(page, record=record, folder=folder, check_cancel=check_cancel)
