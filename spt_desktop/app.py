@@ -220,6 +220,7 @@ class App:
         self._storage_results=queue.Queue(maxsize=1)
         self._storage_after=None
         self._startup_prune_after = None
+        self._startup_prune_thread = None
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -441,8 +442,11 @@ class App:
                 # Housekeeping must never change a verified startup result.
                 return
 
-        threading.Thread(target=prune, name='spt-startup-prune',
-                         daemon=True).start()
+        # Non-daemon: once deletion starts, process exit waits for it.
+        thread = threading.Thread(target=prune, name='spt-startup-prune',
+                                  daemon=False)
+        self._startup_prune_thread = thread
+        thread.start()
 
     def _refresh_storage(self):
         """Inspect private job storage off Tk, without starting any cleanup."""
@@ -934,6 +938,14 @@ class App:
                 # Root teardown may already have retired this callback.
                 pass
             self._startup_prune_after = None
+        if self._startup_prune_thread is not None:
+            # Await an in-flight mutation before teardown. The thread is
+            # non-daemon, so a join timeout cannot leave a half-deleted job:
+            # process exit still waits for the bounded prune call to finish.
+            join = getattr(self._startup_prune_thread, 'join', None)
+            if join is not None:
+                join(timeout=30)
+            self._startup_prune_thread = None
         if self._update_after is not None:
             try:
                 self.root.after_cancel(self._update_after)

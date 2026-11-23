@@ -798,3 +798,32 @@ def test_startup_auto_prune_excludes_active_job(tmp_path, monkeypatch):
     finally:
         app._dispose()
         root.destroy()
+
+
+def test_startup_prune_is_joined_before_gui_disposal(tmp_path, monkeypatch):
+    import threading as real_threading
+
+    release = real_threading.Event()
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: release.wait(10))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        worker = app._startup_prune_thread
+        assert worker is not None and worker.is_alive()
+        assert worker.daemon is False
+        real_threading.Timer(0.5, release.set).start()
+        app._dispose()
+        assert not worker.is_alive()
+        assert app._startup_prune_thread is None
+    finally:
+        release.set()
+        app._dispose()
+        root.destroy()

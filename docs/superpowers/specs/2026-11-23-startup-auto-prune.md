@@ -18,7 +18,7 @@ auto-clean sampai jobs baru selesai.
    asynchronous pada event loop Tk. Pemeriksaan hanya berjalan untuk App yang
    benar-benar memiliki `JobController` (bukan self-test dengan controller
    sintetik).
-2. Thread daemon memanggil `prune_published_jobs(workspace, downloads,
+2. Thread **non-daemon** memanggil `prune_published_jobs(workspace, downloads,
    keep_jobs, exclude=<job aktif>)`. `keep_jobs == 0` melewati pemeriksaan.
 3. Kegagalan mendapatkan folder Downloads atau kesalahan OSError/ValueError/
    TypeError/RuntimeError ditelan dengan aman: startup tidak boleh gagal karena
@@ -27,6 +27,10 @@ auto-clean sampai jobs baru selesai.
    tidak ada dialog/konfirmasi baru. `prune_published_jobs` tetap melakukan
    verifikasi seal + file publikasi Downloads + batas retensi yang sama.
 5. Inventory manual (`inspect_job_storage`) tetap read-only saat startup.
+6. `_dispose()` mencatat thread yang berjalan dan `join(timeout=30)` sebelum
+   teardown GUI. Karena thread non-daemon, proses tetap menunggu sampai
+   `prune_published_jobs()` selesai walaupun join mencapai batas waktu; tidak
+   ada proses yang keluar di tengah `_remove_tree()`.
 
 ## Yang tidak berubah
 
@@ -36,7 +40,9 @@ auto-clean sampai jobs baru selesai.
 
 ## Pengujian
 
-Tes GUI sintetik: startup dengan controller milik sendiri memanggil
+Tes GUI sintetik: menutup aplikasi saat thread startup masih aktif
+   menghentikan thread sebelum `_dispose()` selesai (`daemon is False`);
+   startup dengan controller milik sendiri memanggil
 `prune_published_jobs` tepat sekali dengan `keep_jobs` dan `exclude` yang benar;
 `keep_jobs == 0` tidak memanggilnya; self-test dengan controller injeksi tidak
 memanggilnya; `delete_incomplete_jobs` tidak pernah dipanggil saat startup.
