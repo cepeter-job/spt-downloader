@@ -233,6 +233,8 @@ class App:
         self._storage_rerun=False
         self._storage_results=queue.Queue(maxsize=1)
         self._storage_after=None
+        self._startup_prune_after = None
+        self._startup_prune_thread = None
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -272,6 +274,9 @@ class App:
             self._update_after = root.after(0, self.check_updates)
             # Read-only private job inventory; never delete PARTIAL/failed on startup.
             self._storage_after = root.after(0, self._refresh_storage)
+            # One asynchronous sealed-COMPLETE housekeeping pass for jobs left
+            # behind by a previous session; never blocks the first UI paint.
+            self._startup_prune_after = root.after(0, self._startup_prune)
 
     def check_updates(self, manual=False):
         """Fetch public release metadata off Tk's thread, never touching Coretax."""
@@ -427,6 +432,35 @@ class App:
             messagebox.showerror(copy_text('main.dialog.title.log.tidak.tersedia'),
                 copy_text('main.dialog.body.folder.log.belum.tersedia.atau'),
                 parent=self._settings_dialog or self.root)
+
+    def _startup_prune(self):
+        """Run one bounded auto-clean pass after startup, off Tk's thread."""
+        self._startup_prune_after = None
+        if self._disposed or self._closing or not self._owns_controller:
+            return
+        keep = self.preferences['keep_jobs']
+        if not keep:
+            return
+        excluded = (getattr(self.controller, 'job_id', None)
+                    if self.controller.active else None)
+
+        def prune():
+            try:
+                downloads = downloads_folder()
+            except (OSError, ValueError):
+                return
+            try:
+                prune_published_jobs(self.workspace, downloads, keep,
+                                     exclude=excluded)
+            except (OSError, ValueError, TypeError, RuntimeError):
+                # Housekeeping must never change a verified startup result.
+                return
+
+        # Non-daemon: once deletion starts, process exit waits for it.
+        thread = threading.Thread(target=prune, name='spt-startup-prune',
+                                  daemon=False)
+        self._startup_prune_thread = thread
+        thread.start()
 
     def _refresh_storage(self):
         """Inspect private job storage off Tk, without starting any cleanup."""
@@ -924,6 +958,17 @@ class App:
                 # teardown. Disposal is terminal; no retry is safe or needed.
                 pass
             self._storage_after = None
+        if self._startup_prune_after is not None:
+            try:
+                self.root.after_cancel(self._startup_prune_after)
+            except tk.TclError:
+                # Root teardown may already have retired this callback.
+                pass
+            self._startup_prune_after = None
+        if self._startup_prune_thread is not None:
+            # Do not block Tk for a slow prune. The thread is non-daemon, so
+            # process exit still waits for any in-flight _remove_tree to finish.
+            self._startup_prune_thread = None
         if self._update_after is not None:
             try:
                 self.root.after_cancel(self._update_after)
