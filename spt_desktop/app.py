@@ -761,21 +761,26 @@ class App:
             if kind == 'preview' and result is not None:
                 self._storage_snapshot = result
                 self._paint_storage()
-                if not result['scan_complete']:
+                if not result['removable']:
                     finish()
-                    messagebox.showinfo(copy_text('settings.dialog.title.inventaris.belum.lengkap'),
-                        copy_text('settings.dialog.body.ada.file.job.yang.tidak'),
-                        parent=dialog)
-                elif not result['removable']:
-                    finish()
-                    messagebox.showinfo(copy_text('settings.dialog.title.tidak.ada.job.partial.gagal'),
-                        copy_text('settings.dialog.body.tidak.ada.job.partial.gagal'),
-                        parent=dialog)
+                    if not result['scan_complete']:
+                        messagebox.showinfo(copy_text('settings.dialog.title.inventaris.belum.lengkap'),
+                            copy_text('settings.dialog.body.ada.file.job.yang.tidak'),
+                            parent=dialog)
+                    else:
+                        messagebox.showinfo(copy_text('settings.dialog.title.tidak.ada.job.partial.gagal'),
+                            copy_text('settings.dialog.body.tidak.ada.job.partial.gagal'),
+                            parent=dialog)
                 elif self.controller.active:
                     finish()
                     messagebox.showinfo(copy_text('settings.dialog.title.job.masih.aktif'),
                         copy_text('settings.dialog.body.pembersihan.dibatalkan.selama.scraping.berjalan'), parent=dialog)
                 else:
+                    if not result['scan_complete']:
+                        messagebox.showwarning(
+                            copy_text('settings.dialog.title.inventaris.belum.lengkap'),
+                            copy_text('settings.dialog.body.inventaris.sebagian.tidak.diverifikasi'),
+                            parent=dialog)
                     candidates.update({item['id']: item for item in result['removable']})
                     choose(result['removable'])
                 return
