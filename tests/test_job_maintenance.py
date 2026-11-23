@@ -123,9 +123,10 @@ def test_corrupt_or_unknown_job_retained_and_preview_fails_closed(tmp_path, monk
     (unknown / 'run.json').write_text('invalid JSON')
     preview = maintenance.inspect_job_storage(root)
     assert not preview['scan_complete']
-    assert preview['removable'] == ()
-    assert preview['protected'] >= 1
-    assert safe.is_dir() and unknown.is_dir()
+    assert {item['id'] for item in preview['removable']} == {safe.name}
+    assert maintenance.delete_incomplete_jobs(root, _approve(preview)) == {
+        'removed': 1, 'incomplete': False}
+    assert not safe.exists() and unknown.is_dir()
 
 
 def test_unsealed_error_without_run_can_be_manually_deleted_after_terminal(tmp_path, monkeypatch):
@@ -216,3 +217,21 @@ def test_unmarked_legacy_partial_is_counted_but_not_authorized(
     assert inventory['partial'] == 1 and inventory['protected'] == 1
     assert inventory['removable'] == ()
     assert old.is_dir()
+
+
+def test_oversized_metadata_is_isolated_from_verified_partial_cleanup(
+        tmp_path, monkeypatch):
+    root, downloads = _setup(tmp_path, monkeypatch)
+    safe = _job(root, 1, complete=False)
+    oversized = _job(root, 2, complete=False)
+    with (oversized / 'run.json').open('wb') as stream:
+        stream.truncate(16 * 1024 * 1024 + 1)
+
+    preview = maintenance.inspect_job_storage(root)
+    assert not preview['scan_complete']
+    assert {item['id'] for item in preview['removable']} == {safe.name}
+    assert oversized.name not in str(preview['removable'])
+    assert maintenance.delete_incomplete_jobs(root, _approve(preview)) == {
+        'removed': 1, 'incomplete': False}
+    assert not safe.exists() and oversized.is_dir()
+    assert (downloads / 'resume.xlsx').read_bytes() == b'SYNTHETIC VERIFIED EXCEL'
