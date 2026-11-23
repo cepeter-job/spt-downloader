@@ -742,3 +742,85 @@ def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
     finally:
         app._dispose()
         root.destroy()
+
+
+def test_incomplete_cleanup_partial_scan_offers_verified_candidates_only(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+
+    root, app, ctl, dialog, path, writes, errors = settings
+    token, digest = 'a' * 32, 'b' * 64
+    warnings, prompts, approvals = [], [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    preview = {'total': 2, 'complete': 0, 'partial': 1, 'failed': 0,
+               'protected': 2, 'estimated_bytes': 4096,
+               'scan_complete': False,
+               'removable': ({'id': token, 'status': 'PARTIAL',
+                              'bytes': 2048, 'digest': digest,
+                              'modified_ns': 1_700_000_000_000_000_000},)}
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: approvals.append(a[1]) or
+                        {'removed': 1, 'incomplete': False})
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda title, body, **kw: prompts.append(body) or True)
+    monkeypatch.setattr(gui.messagebox, 'showwarning',
+                        lambda title, message, **kw: warnings.append((title, message)))
+    monkeypatch.setattr(gui.messagebox, 'showinfo', lambda *a, **kw: None)
+
+    button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+    _pump_manual_prune(root)
+    assert warnings and warnings[-1][1] == copy_text(
+        'settings.dialog.body.inventaris.sebagian.tidak.diverifikasi')
+    picker = next(w for w in widgets(root)
+                  if isinstance(w, tk.Toplevel) and w.title() ==
+                  copy_text('settings.window.title.pilih.job.partial.gagal'))
+    table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+    assert tuple(table.get_children()) == (token,)
+    table.selection_set(token)
+    button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
+    _pump_manual_prune(root)
+    assert approvals == [((token, digest),)]
+    assert len(prompts) == 1 and token not in prompts[0]
+    assert not app._manual_prune_busy and not ctl.active
+
+
+def test_incomplete_cleanup_partial_scan_without_candidates_stops(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+
+    root, app, ctl, dialog, path, writes, errors = settings
+    notices = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    preview = {'total': 1, 'complete': 0, 'partial': 0, 'failed': 0,
+               'protected': 1, 'estimated_bytes': 2048,
+               'scan_complete': False, 'removable': ()}
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: pytest.fail('No candidate to delete'))
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: notices.append(title))
+
+    button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+    _pump_manual_prune(root)
+    assert notices == [copy_text('settings.dialog.title.inventaris.belum.lengkap')]
+    assert not any(isinstance(w, tk.Toplevel) and w.title() ==
+                   copy_text('settings.window.title.pilih.job.partial.gagal')
+                   for w in widgets(root))
+    assert not app._manual_prune_busy and not ctl.active
