@@ -282,6 +282,37 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
         fixture.close()
 
 
+@pytest.mark.parametrize('case,expected', [
+    # complete custody + unprojected section -> projection_incomplete
+    ({'eligible': False, 'corporate': True, 'masa': False, 'forms': [{}],
+      'manifest': {'complete': True}, 'decoded': {'eligible': True}, 'projection_complete': False},
+     'projection_incomplete'),
+    # incomplete coverage -> coverage_incomplete (projection never evaluated)
+    ({'eligible': False, 'corporate': True, 'masa': False, 'forms': [{}],
+      'manifest': {'complete': True}, 'decoded': {'eligible': True}, 'projection_complete': None},
+     'coverage_incomplete'),
+    # adapter-ineligible -> adapter_ineligible
+    ({'eligible': False, 'corporate': True, 'masa': False, 'forms': [{}],
+      'manifest': {'complete': True}, 'decoded': {'eligible': False}, 'projection_complete': None},
+     'adapter_ineligible'),
+    # capture-incomplete -> capture_incomplete
+    ({'eligible': False, 'corporate': True, 'masa': False, 'forms': [{}],
+      'manifest': {'complete': False}, 'decoded': {'eligible': True}, 'projection_complete': None},
+     'capture_incomplete'),
+    # native-verified corporate
+    ({'eligible': True, 'corporate': True, 'masa': False, 'forms': [{}],
+      'manifest': {'complete': True}, 'decoded': {'eligible': True}, 'projection_complete': True},
+     'native_verified'),
+    # native-verified masa (shared path, projection not evaluated)
+    ({'eligible': True, 'corporate': False, 'masa': True, 'forms': [{}],
+      'manifest': {'complete': True}, 'decoded': {'eligible': True}, 'projection_complete': None},
+     'native_verified'),
+])
+def test_detail_source_reason_classification(case, expected):
+    from coretax_browser import _detail_source_reason
+    assert _detail_source_reason(**case) == expected
+
+
 @pytest.mark.parametrize('extra_form', [('L10-A', 'rshshr-citr-l10a-form'), ('L99', 'synthetic-unknown-form')])
 def test_missing_declared_root_or_unknown_visible_form_uses_whole_dom(browser, tmp_path, monkeypatch, extra_form):
     native_collector()

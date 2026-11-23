@@ -284,16 +284,24 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
     from coretax_corporate_projection import (L10C_BUILD_DIGESTS, L10C_HEADERS, MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
-    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
+    from spt_desktop import diagnostics
+
+    def _refuse(gate):
+        # Fixed-enum diagnostic: name the exact predicate that dropped the
+        # L10-C projection so a live run can be diagnosed without payloads.
+        diagnostics.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=gate)
         return None
+
+    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
+        return _refuse('history')
     needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
     urls = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
     if set().union(*map(set, urls.values())) != needed:
-        return None  # The independent shared producer has not been integrated.
+        return _refuse('reference_catalogs')  # The independent shared producer has not been integrated.
     pins = L10C_BUILD_DIGESTS
     if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
-        return None
+        return _refuse('build_pins')
     route, builds = page.url, {}
     for url in (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE):
         _check_cancel(check_cancel)
@@ -303,17 +311,17 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
         digest = page.evaluate(script, url)
         _check_cancel(check_cancel)
         if type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}', digest) or digest != pins[url]:
-            return None
+            return _refuse('build_digests')
         builds[url] = digest
     environment = page.evaluate('''() => ({locale:navigator.language,
         timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})''')
     _check_cancel(check_cancel)
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
-        return None
+        return _refuse('environment')
     metadata = form.locator('rsh-citr-l10c-grid1').locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
     if (not isinstance(metadata, dict) or metadata.get('headers') != L10C_HEADERS
             or metadata.get('footer_spans') != []):
-        return None
+        return _refuse('table_metadata')
     references, kinds_seen = [], set()
     observations = _reacquire_reference_observations(page, capture, list(urls), check_cancel)
     for url, kinds in sorted(urls.items()):
@@ -325,7 +333,7 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
             kinds_seen.update(kinds)
     if (kinds_seen != needed or page.url != route
             or capture.observe_l10c_lifetime(check_cancel=check_cancel) is None):
-        return None
+        return _refuse('references_or_lifetime')
     return {'kind': 'corporate-l10c-v1', 'builds': builds, 'route': route, **environment,
         'visibility_binding': 'current-induk-enabled-v1', 'references': references,
         'tables': [{'component': 'rsh-citr-l10c-grid1', 'headers': list(L10C_HEADERS), 'footer_spans': []}]}
