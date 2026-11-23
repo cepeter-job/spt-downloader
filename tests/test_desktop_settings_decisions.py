@@ -708,7 +708,7 @@ def test_incomplete_cleanup_refuses_unsaved_changes(settings, monkeypatch):
     assert not app._manual_prune_busy
 
 
-def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
+def test_owned_app_starts_inventory_and_async_auto_prune_only(
         tmp_path, monkeypatch):
     from types import SimpleNamespace
     preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
@@ -729,16 +729,72 @@ def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
     monkeypatch.setattr(gui, 'inspect_job_storage',
                         lambda *args, **kwargs: calls.append('inspect') or preview)
     monkeypatch.setattr(gui, 'delete_incomplete_jobs',
-                        lambda *args, **kwargs: pytest.fail('Startup must not delete jobs'))
+                        lambda *args, **kwargs: pytest.fail('Startup must not delete PARTIAL/FAILED'))
     monkeypatch.setattr(gui, 'prune_published_jobs',
-                        lambda *args, **kwargs: pytest.fail('Startup inspect is read-only'))
+                        lambda *a, **kw: calls.append(('prune', a[2], kw.get('exclude'))) or 0)
     root = tk.Tk()
     app = gui.App(root, tmp_path)
     try:
         _pump_manual_prune(root)
-        assert calls == ['inspect']
+        assert calls == ['inspect', ('prune', 10, None)]
         assert app._storage_snapshot == preview
         assert not app._storage_pending
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_auto_prune_respects_zero_retention(tmp_path, monkeypatch):
+    prefs = dict(gui.load_preferences(tmp_path))
+    prefs['keep_jobs'] = 0
+    monkeypatch.setattr(gui, 'load_preferences', lambda *args: prefs)
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('keep_jobs=0 disables pruning'))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert app.preferences['keep_jobs'] == 0
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_auto_prune_excludes_active_job(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    token = 'a' * 32
+    active = Controller()
+    active.active = True
+    active.job_id = token
+    calls = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'JobController', lambda *args: active)
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 1, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 1, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: calls.append(kw.get('exclude')) or 0)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert calls == [token]
     finally:
         app._dispose()
         root.destroy()
