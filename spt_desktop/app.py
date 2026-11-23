@@ -40,6 +40,12 @@ UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
 
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'json-first','keep_jobs':DEFAULT_KEEP_JOBS}
 DETAIL_SOURCE_LABELS={'dom':copy_text('main.source.label.dom'),'json-first':copy_text('main.source.label.json.hybrid.pilot')}
+
+
+class UnsupportedDesktopDetailSourceError(ValueError):
+    """A CLI-only detail source cannot be saved as a desktop preference."""
+
+
 _SELECTION_MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember')
 
@@ -157,7 +163,7 @@ def save_preferences(root,data):
     allowed['login_origin']=LOGIN_ORIGIN
     validate_detail_source(allowed['detail_source'])
     if allowed['detail_source'] not in DETAIL_SOURCE_LABELS:
-        raise ValueError('Mode sumber detail hanya didukung melalui CLI SPT Badan.')
+        raise UnsupportedDesktopDetailSourceError('Mode sumber detail hanya didukung melalui CLI SPT Badan.')
     validate_keep_jobs(allowed['keep_jobs'])
     if allowed['browser'] not in ('msedge','chrome') or allowed['login_origin'] not in ALLOWED_ORIGINS:
         raise ValueError('Preferensi browser/origin tidak valid.')
@@ -167,6 +173,14 @@ def save_preferences(root,data):
     temporary=root/'preferences.tmp'
     temporary.write_text(json.dumps(allowed,ensure_ascii=False,indent=2),encoding='utf-8')
     temporary.replace(root/'preferences.json')
+
+
+def _settings_validation_message(error):
+    """Keep CLI-only mode errors distinct from unrelated settings errors."""
+    key = ('settings.dialog.body.sumber.detail.hanya.cli'
+           if isinstance(error, UnsupportedDesktopDetailSourceError)
+           else 'settings.dialog.body.periksa.akun.password.dan.jumlah')
+    return copy_text(key)
 
 
 def _record_update_check(outcome, manual, duration_ms=None):
@@ -1795,9 +1809,9 @@ class App:
                 save_preferences(self.workspace,preferences);self.preferences=preferences
                 if self._owns_controller:
                     self.controller.keep_jobs=preferences['keep_jobs']
-            except ValueError:
+            except ValueError as error:
                 messagebox.showerror(copy_text('settings.dialog.title.pengaturan.belum.disimpan'),
-                    copy_text('settings.dialog.body.periksa.akun.password.dan.jumlah'),parent=dialog)
+                    _settings_validation_message(error), parent=dialog)
                 return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
