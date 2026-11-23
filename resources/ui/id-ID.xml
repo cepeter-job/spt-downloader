@@ -124,6 +124,7 @@ Tahun pajak permintaan: {year}</string>
   <string id="settings.dialog.body.sebagian.job.belum.dapat.diverifikasi">Sebagian job belum dapat diverifikasi atau batas waktu pemeriksaan habis. Tidak ada job yang dihapus; coba lagi setelah masalah selesai.</string>
   <string id="settings.dialog.body.simpan.atau.abaikan.perubahan.pengaturan">Simpan atau abaikan perubahan Pengaturan sebelum memangkas job.</string>
   <string id="settings.dialog.body.simpan.atau.abaikan.perubahan.sebelum">Simpan atau abaikan perubahan sebelum membersihkan job.</string>
+  <string id="settings.dialog.body.sumber.detail.hanya.cli">Mode JSON-only tidak tersedia di aplikasi desktop. Pilih DOM atau JSON-hybrid (pilot) di Pengaturan. JSON-only hanya didukung melalui CLI SPT Badan.</string>
   <string id="settings.dialog.body.tidak.ada.job.lama.bersegel">Tidak ada job lama bersegel COMPLETE dan terverifikasi untuk dipangkas.</string>
   <string id="settings.dialog.body.tidak.ada.job.partial.gagal">Tidak ada job PARTIAL/gagal yang aman dipilih untuk penghapusan.</string>
   <string id="settings.dialog.body.total.job.lama.memenuhi.syarat">{total} job lama memenuhi syarat. Perkiraan ruang: {value2} MiB.
