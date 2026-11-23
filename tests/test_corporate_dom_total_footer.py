@@ -118,6 +118,131 @@ def test_dom_l3b_partial_capture_never_maps_missing_source_rows(tmp_path):
         book.close()
 
 
+def _rupiah(value):
+    return f'{value:,}'.replace(',', '.')
+
+
+def _l3_live_domestic_tables():
+    """The live Amendment L3 composition: overseas + reviewed-redundant + domestic.
+
+    Mirrors job dbcf36d2: Tabel 1 (empty body + verified TOTAL footer),
+    Tabel 2 (reviewed-redundant empty table), Tabel 3 (60 body rows + three
+    footer rows spanning 1-4). All values synthetic.
+    """
+    overseas_headers = headers('L3', 2)
+    domestic_headers = headers('L3', 7)
+    body = [[str(index), f'PEMOHON {index}', f'00{index:012d}', 'Pasal 23',
+             _rupiah(1_000_000 * index), _rupiah(25_000 * index),
+             f'BKT{index:04d}', '31-12-2025'] for index in range(1, 61)]
+    footer = [['TOTAL', '7.975.505.425', '176.539.738', ''],
+              ['KREDIT PAJAK LUAR NEGERI', '', '0', ''],
+              ['JUMLAH KREDIT PAJAK', '', '176.539.738', '']]
+    overseas = {
+        'name': 'Tabel 1', 'group': 'A. PENGHASILAN DARI LUAR NEGERI',
+        'headers': overseas_headers, 'rows': [['', 'TOTAL', '0', '0', '', '0']],
+        'body_row_count': 0, 'source_total': 0, 'pages': 1, 'complete': True,
+        'footer': [['', 'TOTAL', '0', '0', '', '0']],
+        'footer_spans': [[1, 4, 1, 1, 2, 1]],
+    }
+    redundant = {
+        'name': 'Tabel 2', 'group': 'A. PENGHASILAN DARI LUAR NEGERI',
+        'headers': [], 'rows': [], 'body_row_count': 0, 'footer': [],
+        'footer_spans': [], 'complete': True,
+    }
+    domestic = {
+        'name': 'Tabel 3', 'group': 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN',
+        'headers': domestic_headers, 'rows': [*body, *footer],
+        'body_row_count': 60, 'source_total': 60, 'pages': 1, 'complete': True,
+        'footer': footer, 'footer_spans': [[4, 1, 1, 2]] * 3,
+    }
+    return overseas, redundant, domestic
+
+
+def _l3_header_fields():
+    return [
+        {'group': 'HEADER', 'label': 'TAHUN PAJAK', 'field': 'TaxPeriodYear',
+         'value': '2025'},
+        {'group': 'HEADER', 'label': 'Nomor Identitas WP', 'field': 'CollectorTin',
+         'value': '0211096821016000'},
+    ]
+
+
+def test_dom_l3b_complete_total_footer_restores_live_three_table_composition(tmp_path):
+    run = source_run('PPh Badan', [section(
+        'L3', tables=list(_l3_live_domestic_tables()),
+        fields=_l3_header_fields())])
+    before = deepcopy(run)
+    reports = []
+    files = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert run == before  # captured values, footers and spans are never rewritten.
+    coretax.verify_outputs(run, tmp_path)
+    book_name, = [item for item in files if item != 'resume.xlsx']
+    report = next(item for item in reports if item.get('form') == 'L3')
+    book = load_workbook(tmp_path / book_name)
+    try:
+        sheet = book['L3']
+        # Tabel 1 (overseas) keeps only its reviewed JUMLAH footer.
+        assert sheet['A4'].value == 'JUMLAH'
+        assert 'A4:E4' in sheet.merged_cells
+        assert sheet['F4'].value == 0
+        assert sheet['G4'].value == 0
+        assert sheet['J4'].value == 0
+        # Tabel 3 (domestic) restores every body row in order, no duplicates.
+        assert [sheet[f'A{row}'].value for row in range(8, 68)] == [
+            str(index) for index in range(1, 61)]
+        assert sheet['E8'].value == 1_000_000
+        assert sheet['F8'].value == 25_000
+        assert sheet['G8'].value == 'BKT0001'
+        assert sheet['H8'].value == '31-12-2025'
+        assert sheet['E67'].value == 60_000_000
+        assert sheet['F67'].value == 1_500_000
+        assert sheet['G67'].value == 'BKT0060'
+        assert sheet['H67'].value == '31-12-2025'
+        # The three footer rows land on their reviewed cells.
+        assert sheet['A68'].value == 'JUMLAH'
+        assert 'A68:D68' in sheet.merged_cells
+        assert sheet['E68'].value == 7_975_505_425
+        assert sheet['F68'].value == 176_539_738
+        assert sheet['A69'].value == 'KREDIT PAJAK LUAR NEGERI'
+        assert sheet['F69'].value == 0
+        assert sheet['A70'].value == 'JUMLAH KREDIT PAJAK'
+        assert sheet['F70'].value == 176_539_738
+        # Tabel 3 is no longer unmapped; the reviewed-redundant Tabel 2 and the
+        # two HEADER fields stay explicitly partial, so the form is not complete.
+        assert report['complete'] is False
+        assert report['unmapped_rows'] == 0
+        assert report['unmapped_tables'] == 1
+        assert report['unmapped_fields'] == 2
+        assert report['reviewed_redundant_tables'] == 1
+        assert report['reviewed_redundant_fields'] == 2
+        assert [item['name'] for item in report['unmapped_table_identities']] == [
+            'Tabel 2']
+        assert {item['field'] for item in report['unmapped_field_identities']} == {
+            'TaxPeriodYear', 'CollectorTin'}
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('mutated_spans', [
+    [3, 1, 1, 3],  # wrong physical label span for the TOTAL caption
+    [1, 1, 1, 5],  # wrong colspan signature
+])
+def test_dom_l3b_mutated_total_footer_geometry_stays_unmapped(tmp_path, mutated_spans):
+    _, _, domestic = _l3_live_domestic_tables()
+    domestic = deepcopy(domestic)
+    domestic['footer_spans'][0] = mutated_spans
+    book, report = workbook(tmp_path, 'L3', [domestic])
+    try:
+        # An unreviewed footer shape must not bind: no body rows reach the sheet.
+        sheet = book['L3']
+        assert [sheet[f'A{row}'].value for row in range(8, 68)
+                if str(sheet[f'A{row}'].value or '').isdigit()] == []
+        assert report['complete'] is False
+        assert report['unmapped_rows'] == 63
+    finally:
+        book.close()
+
+
 def test_dom_l11b_verified_average_footers_restore_source_bound_der(tmp_path):
     debts = ['TOTAL', *(['0'] * 12), '75']
     equity = ['TOTAL', *(['0'] * 12), '25']
