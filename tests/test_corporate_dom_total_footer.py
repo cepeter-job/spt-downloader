@@ -118,6 +118,33 @@ def test_dom_l3b_partial_capture_never_maps_missing_source_rows(tmp_path):
         book.close()
 
 
+def test_dom_l3b_complete_total_footer_restores_all_body_rows(tmp_path):
+    domestic = synthetic_table('L3', 7, 3, 6, ['TOTAL', '600', '15', ''],
+                               [4, 1, 1, 2])
+    domestic['footer'] += [
+        ['KREDIT PAJAK LUAR NEGERI', '', '0', ''],
+        ['JUMLAH KREDIT PAJAK', '', '15', ''],
+    ]
+    domestic['footer_spans'] += [[4, 1, 1, 2], [4, 1, 1, 2]]
+    domestic['rows'] = [*domestic['rows'][:6], *domestic['footer']]
+    book, report = workbook(tmp_path, 'L3', [domestic])
+    try:
+        sheet = book['L3']
+        assert sheet['A14'].value == 'JUMLAH'
+        assert 'A14:D14' in sheet.merged_cells
+        assert sheet['E14'].value == 600
+        assert sheet['F14'].value == 15
+        assert sheet['A15'].value == 'KREDIT PAJAK LUAR NEGERI'
+        assert sheet['F15'].value == 0
+        assert sheet['A16'].value == 'JUMLAH KREDIT PAJAK'
+        assert sheet['F16'].value == 15
+        assert [sheet[f'A{row}'].value for row in range(8, 14)] == [
+            str(i) for i in range(1, 7)]
+        assert report['unmapped_tables'] == report['unmapped_rows'] == 0
+    finally:
+        book.close()
+
+
 def test_dom_l11b_verified_average_footers_restore_source_bound_der(tmp_path):
     debts = ['TOTAL', *(['0'] * 12), '75']
     equity = ['TOTAL', *(['0'] * 12), '25']
