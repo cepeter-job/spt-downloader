@@ -280,13 +280,28 @@ def test_bind_l10c_structure_records_each_refusal_reason():
         assert bind(cap, **{key: Locator(fail=True)}) is False
         assert cap._l10c_bind_reason == 'handle_' + key
 
-    # malformed/unavailable JS state
-    cap = make_capture(lifetime={'kind': 'x'}, history=object(), state=None)
-    assert bind(cap) is False and cap._l10c_bind_reason == 'state_start'
+    # JS evaluation produced no state
+    cap = make_capture(lifetime={'kind': 'x'}, history=object())
+    assert bind(cap) is False and cap._l10c_bind_reason == 'state_start_eval'
+
+    # malformed JS state
+    cap = make_capture(lifetime={'kind': 'x'}, history=object())
+    cap._l10c_probe = lambda operation, check_cancel=None: {'bad': 'state'}
+    cap._l10c_state = DetailJsonCapture._l10c_state.__get__(cap)
+    assert bind(cap) is False and cap._l10c_bind_reason == 'state_start_malformed'
+
+    # unavailable JS state
+    cap = make_capture(lifetime={'kind': 'x'}, history=object())
+    cap._l10c_probe = lambda operation, check_cancel=None: {
+        'available': False, 'changed': False, 'complete': False}
+    cap._l10c_state = DetailJsonCapture._l10c_state.__get__(cap)
+    assert bind(cap) is False and cap._l10c_bind_reason == 'state_start_unavailable'
 
     # successful start control
     cap = make_capture(lifetime={'kind': 'x'}, history=object(),
                        state={'available': True, 'changed': False, 'complete': False})
+    cap._l10c_probe = lambda operation, check_cancel=None: {
+        'available': True, 'changed': False, 'complete': False}
     assert bind(cap) is True and cap._l10c_bind_reason is None
 
 
@@ -311,11 +326,13 @@ def test_bind_l10c_structure_end_requires_complete_state():
     cap._l10c_state = lambda value: value
     args = [Locator() for _ in range(5)]
     incomplete = {'available': True, 'changed': False, 'complete': False}
+    cap._l10c_probe = lambda operation, check_cancel=None: incomplete
     cap._l10c_state = lambda value: incomplete
     assert cap.bind_l10c_structure(*args, phase='end') is False
-    assert cap._l10c_bind_reason == 'state_end'
+    assert cap._l10c_bind_reason == 'state_end_incomplete'
     cap._l10c_bind_reason = None
     complete = {'available': True, 'changed': False, 'complete': True}
+    cap._l10c_probe = lambda operation, check_cancel=None: complete
     cap._l10c_state = lambda value: complete
     assert cap.bind_l10c_structure(*args, phase='end') is True
     assert cap._l10c_bind_reason is None
