@@ -827,3 +827,90 @@ def test_startup_prune_is_joined_before_gui_disposal(tmp_path, monkeypatch):
         release.set()
         app._dispose()
         root.destroy()
+
+
+def test_startup_prune_ignores_injected_controller(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('No auto-clean without owned controller'))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path, Controller())
+    try:
+        app._startup_prune()
+        assert app._startup_prune_thread is None
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_prune_swallows_downloads_and_prune_failures(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    failures = []
+
+    def failing_downloads():
+        failures.append('downloads')
+        raise OSError('SYNTHETIC')
+
+    monkeypatch.setattr(gui, 'downloads_folder', failing_downloads)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert failures == ['downloads']
+
+        monkeypatch.setattr(gui, 'downloads_folder', lambda: tmp_path)
+        monkeypatch.setattr(gui, 'prune_published_jobs',
+                            lambda *a, **kw: (_ for _ in ()).throw(ValueError('SYNTHETIC')))
+        app._startup_prune()
+        assert failures == ['downloads']
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_dispose_tolerates_retired_startup_callback(tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    original_cancel = root.after_cancel
+    pending = app._startup_prune_after
+    assert pending is not None
+
+    def cancel(token):
+        if token == pending:
+            raise tk.TclError('SYNTHETIC_RETIRED')
+        return original_cancel(token)
+
+    monkeypatch.setattr(root, 'after_cancel', cancel)
+    try:
+        app._dispose()
+        assert app._startup_prune_after is None
+    finally:
+        app._dispose()
+        root.destroy()
