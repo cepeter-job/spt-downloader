@@ -501,8 +501,8 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
                     incomplete = True
                     continue
             incomplete = incomplete or (approved is not None and removed != len(approved))
-            reason = ('removed' if removed else
-                      'verification_failed' if incomplete else
+            reason = ('verification_failed' if incomplete else
+                      'removed' if removed else
                       'no_candidates' if not candidates else
                       'no_eligible_candidates')
             diagnostics.record('jobs.prune_attempt', removed=removed,

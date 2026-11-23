@@ -673,3 +673,34 @@ def test_manual_empty_approval_still_logs_prune_attempt(tmp_path, monkeypatch):
     rows = [row for row in records(tmp_path)
             if row['event'] == 'jobs.prune_attempt']
     assert len(rows) == 1 and rows[0]['reason'] == 'no_candidates'
+
+
+def test_prune_attempt_reports_partial_verification_failure(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    good = _job(root, 1, complete=True, sealed=True, final=published)
+    bad = _job(root, 2, complete=True, sealed=True, final=published)
+    newest = _job(root, 3, complete=True, sealed=True, final=published)
+    for index, folder in enumerate((good, bad, newest), 1):
+        stamp = 1_700_000_000 + index
+        os.utime(folder, (stamp, stamp))
+
+    real = prune._eligible
+
+    def refusing(job, *args, **kwargs):
+        if job == bad:
+            return False
+        return real(job, *args, **kwargs)
+
+    monkeypatch.setattr(prune, '_eligible', refusing)
+    with diagnostics.session(tmp_path, 'gui'):
+        result = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+
+    assert result == {'removed': 1, 'incomplete': True}
+    rows = [row for row in records(tmp_path)
+            if row['event'] == 'jobs.prune_attempt']
+    assert len(rows) == 1
+    assert rows[0]['removed'] == 1
+    assert rows[0]['reason'] == 'verification_failed'

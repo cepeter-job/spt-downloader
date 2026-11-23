@@ -1288,7 +1288,8 @@ hanya dari event pasif tersebut.
 `jobs.incomplete_cleanup` dicatat sekali setelah konfirmasi penghapusan manual
 PARTIAL/FAILED. Field `selected`, `removed`, dan `rejected` adalah counter:
 masing-masing jumlah kandidat yang disetujui, job yang benar-benar dihapus, dan
-alasan penolakan. `jobs.incomplete_rejected` menyertakan field `reason` dengan
+jumlah **job** yang ditolak (`selected - removed`), bukan jumlah alasan.
+`jobs.incomplete_rejected` menyertakan field `reason` dengan
 kategori tetap: `active`, `unknown`, `global_recovery`, `deadline`,
 `seal_or_recovery`, `no_terminal`, `wrong_status`, `recovery`, `changed`,
 `error`, dan `disabled`. `rejected` menghitung job yang ditolak

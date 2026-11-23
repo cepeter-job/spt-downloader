@@ -29,7 +29,10 @@ menghapus apa pun.
 4. `jobs.prune_attempt` dicatat oleh `prune_published_jobs()` untuk setiap
    pemanggilan, termasuk ketika `removed == 0`. Field: `removed`, `eligible`,
    dan enum `reason`: `removed`, `no_candidates`, `no_eligible_candidates`,
-   `verification_failed`, `disabled`. Pemanggilan manual dengan
+   `verification_failed`, `disabled`. `verification_failed` lebih utama daripada
+   `removed` bila `incomplete=True`, sehingga kegagalan sebagian tidak tersembunyi
+   oleh keberhasilan sebagian; `removed` tetap menjadi counter terpisah.
+   Pemanggilan manual dengan
    `allowed_ids=()` juga tercatat sebagai `no_candidates`.
 5. Semua field baru masuk allowlist COUNTERS/ENUMS di `diagnostics.py` dan
    didokumentasikan di `docs/diagnostik.md`. Tidak ada field yang membawa
