@@ -251,31 +251,37 @@ _L1D_OMISSION_SHAPE = '''table => {
 
 
 def _observe_l10c_history(form, tab, panel, capture, check_cancel):
-    """Observe C-owned custody only; this does not authorize a body projection."""
+    """Observe C-owned custody only; this does not authorize a body projection.
+
+    Returns None on success, or a fixed-enum subreason naming the first failed
+    predicate so a live run can be diagnosed without payloads.
+    """
     from coretax_browser import _check_cancel
     if any(not callable(getattr(capture, name, None)) for name in
            ('bind_l10c_structure', 'observe_l10c_lifetime')):
-        return False
+        return 'capture_api'
     _check_cancel(check_cancel)
     # Source controls are inspected by identity and disabled structure, never
     # by values/checked state. Legacy/safely unsupported shapes keep fallback.
     if (form.locator('input[formcontrolname="PeriodYear"]').count() != 1
             or form.locator('input[formcontrolname="CollectorTin"]').count() != 1
             or form.locator('p-radiobutton[formcontrolname="Question"]').count() != 2):
-        return False
+        return 'source_controls'
     grid = form.locator('rsh-citr-l10c-grid1')
     table = grid.locator('table')
     if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
             or grid.locator('p-table').count() != 1 or table.count() != 1
             or form.locator('table').count() != 1):
-        return False
+        return 'grid_structure'
     if not capture.bind_l10c_structure(form, grid, table, tab, panel,
                                        phase='start', check_cancel=check_cancel):
-        return False
+        return 'bind_start'
     if not capture.bind_l10c_structure(form, grid, table, tab, panel,
                                        phase='end', check_cancel=check_cancel):
-        return False
-    return capture.observe_l10c_lifetime(check_cancel=check_cancel) is not None
+        return 'bind_end'
+    if capture.observe_l10c_lifetime(check_cancel=check_cancel) is None:
+        return 'lifetime'
+    return None
 
 
 def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
@@ -292,8 +298,9 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
         diagnostics.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=gate)
         return None
 
-    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
-        return _refuse('history')
+    history = _observe_l10c_history(form, tab, panel, capture, check_cancel)
+    if history is not None:
+        return _refuse('history_' + history)
     needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
     urls = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
     if set().union(*map(set, urls.values())) != needed:

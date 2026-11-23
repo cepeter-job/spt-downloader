@@ -131,6 +131,110 @@ def test_c_consumer_refuses_unproved_capabilities_without_label_or_control_loss(
     assert not result['eligible'] and result['sections'] == []
 
 
+@pytest.mark.parametrize('defect,expected', [
+    ('capture_api', 'history_capture_api'),
+    ('source_controls', 'history_source_controls'),
+    ('grid_structure', 'history_grid_structure'),
+    ('bind_start', 'history_bind_start'),
+    ('bind_end', 'history_bind_end'),
+    ('lifetime', 'history_lifetime'),
+])
+def test_l10c_history_subreason_matrix(tmp_path, defect, expected):
+    """Each history predicate independently yields its fixed subreason, a None
+    offer, and no downstream progression. Synthetic fixtures only."""
+    import coretax_corporate as observer
+    from spt_desktop import diagnostics
+    inspect = getattr(observer, '_observe_l10c_projection', None)
+    assert callable(inspect)
+
+    class Node:
+        def __init__(self, selector=''): self.selector = selector
+        def locator(self, selector): return Node(selector)
+        def count(self):
+            if defect == 'source_controls' and 'PeriodYear' in self.selector:
+                return 0
+            if defect == 'grid_structure' and 'ui-grid-offline' in self.selector:
+                return 0
+            return 2 if self.selector.startswith('p-radiobutton') else 1
+        def evaluate(self, script):
+            return {'headers': list(projection.L10C_HEADERS), 'footer_spans': []}
+
+    class Page:
+        url = ROUTE
+        def evaluate(self, script, url=None, **kwargs):
+            if 'AbortController' in script:
+                return None
+            if url is not None:
+                return projection.L10C_BUILD_DIGESTS[url]
+            return {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+
+    class Capture:
+        def bind_l10c_structure(self, *args, **kwargs):
+            phase = kwargs.get('phase')
+            if defect == 'bind_start' and phase == 'start':
+                return False
+            if defect == 'bind_end' and phase == 'end':
+                return False
+            return True
+        def observe_l10c_lifetime(self, **kwargs):
+            return None if defect == 'lifetime' else {'kind': 'corporate-l10c-spa-v1'}
+        def request_observations(self):
+            return [{'url': endpoint, 'method': 'GET', 'request_json': None, 'sequence': sequence}
+                    for endpoint, sequence in ((COUNTRY, 2), (TRANSACTION, 3))]
+
+    capture = Capture()
+    if defect == 'capture_api':
+        capture = type('NoBind', (), {'observe_l10c_lifetime': lambda self, **kw: {'kind': 'x'}})()
+    with diagnostics.session(tmp_path, 'worker') as log:
+        result = inspect(Page(), Node(), Node(), Node(), capture, None)
+        assert log.flush()
+    assert result is None
+    rows = [json.loads(line) for f in sorted((tmp_path / 'logs').glob('diag-*.jsonl'))
+            for line in f.read_text(encoding='utf-8').splitlines()]
+    gates = [r.get('corporate_l10c_detail_gate') for r in rows
+             if r.get('event') == 'corporate.l10c_detail_gate']
+    assert gates == [expected]
+
+
+def test_l10c_history_success_emits_no_gate(tmp_path):
+    """A clean history offers the proof and records no gate diagnostic."""
+    import coretax_corporate as observer
+    from spt_desktop import diagnostics
+    inspect = getattr(observer, '_observe_l10c_projection', None)
+    assert callable(inspect)
+
+    class Node:
+        def __init__(self, selector=''): self.selector = selector
+        def locator(self, selector): return Node(selector)
+        def count(self): return 2 if self.selector.startswith('p-radiobutton') else 1
+        def evaluate(self, script):
+            return {'headers': list(projection.L10C_HEADERS), 'footer_spans': []}
+
+    class Page:
+        url = ROUTE
+        def evaluate(self, script, url=None, **kwargs):
+            if 'AbortController' in script:
+                return None
+            if url is not None:
+                return projection.L10C_BUILD_DIGESTS[url]
+            return {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+
+    class Capture:
+        def bind_l10c_structure(self, *args, **kwargs): return True
+        def observe_l10c_lifetime(self, **kwargs): return {'kind': 'corporate-l10c-spa-v1'}
+        def request_observations(self):
+            return [{'url': endpoint, 'method': 'GET', 'request_json': None, 'sequence': sequence}
+                    for endpoint, sequence in ((COUNTRY, 2), (TRANSACTION, 3))]
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        result = inspect(Page(), Node(), Node(), Node(), Capture(), None)
+        assert log.flush()
+    assert result is not None and result['kind'] == 'corporate-l10c-v1'
+    rows = [json.loads(line) for f in sorted((tmp_path / 'logs').glob('diag-*.jsonl'))
+            for line in f.read_text(encoding='utf-8').splitlines()]
+    assert not [r for r in rows if r.get('event') == 'corporate.l10c_detail_gate']
+
+
 @pytest.mark.parametrize('defect', [None, 'environment', 'provider', 'reference', 'history', 'table'])
 def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_custody(
         consumer_contract, defect):
