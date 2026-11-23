@@ -157,9 +157,13 @@ ENUMS = {
         'duplicate_reference_kind', 'reference_kinds_incomplete', 'component_lifetime',
         'providers', 'provider_digests', 'environment', 'tables'}),
     'corporate_l10c_detail_gate': frozenset({'history_capture_api', 'history_source_controls',
-        'history_grid_structure', 'history_bind_start', 'history_bind_end', 'history_lifetime',
+        'history_grid_structure', 'history_lifetime',
         'reference_catalogs', 'build_pins', 'build_digests', 'environment', 'table_metadata',
-        'references_or_lifetime'}),
+        'references_or_lifetime'} | {
+        'history_bind_' + phase + '_' + reason
+        for phase in ('start', 'end')
+        for reason in ('lifetime_or_history', 'handle_form', 'handle_grid', 'handle_table',
+                       'handle_tab', 'handle_panel', 'state_' + phase, 'unknown')}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',
