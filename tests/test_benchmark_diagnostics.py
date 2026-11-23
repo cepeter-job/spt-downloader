@@ -51,6 +51,20 @@ def test_detail_source_projection_incomplete_reason_survives_allowlist(tmp_path)
     assert row is not None and row.get('source_reason') == 'projection_incomplete'
 
 
+@pytest.mark.parametrize('reason', ['history_capture_api', 'history_source_controls',
+    'history_grid_structure', 'history_bind_start', 'history_bind_end', 'history_lifetime'])
+def test_corporate_l10c_history_gate_reasons_survive_allowlist(tmp_path, reason):
+    """Every fixed history_* label must reach the JSONL; private payloads must not."""
+    with d.session(tmp_path, 'worker') as log:
+        d.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=reason,
+                 url='https://private.invalid', body='SYNTHETIC-SECRET')
+        assert log.flush()
+    rows = logs(tmp_path)
+    event, = [r for r in rows if r['event'] == 'corporate.l10c_detail_gate']
+    assert event.get('corporate_l10c_detail_gate') == reason
+    assert 'SYNTHETIC-SECRET' not in json.dumps(rows) and 'private.invalid' not in json.dumps(rows)
+
+
 def test_benchmark_fields_reject_arbitrary_objects_and_private_numeric_ids(tmp_path):
     class Secret:
         def __str__(self):
