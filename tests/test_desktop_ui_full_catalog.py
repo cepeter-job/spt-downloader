@@ -39,6 +39,24 @@ def test_cleanup_confirmation_uses_validated_templates_without_frozen_prose():
         value1=3, value2='2.1')
 
 
+def test_cli_only_detail_source_has_specific_settings_message(tmp_path):
+    from spt_desktop.app import (UnsupportedDesktopDetailSourceError,
+                                 _settings_validation_message, save_preferences)
+    destination = tmp_path / 'no-write'
+    with pytest.raises(UnsupportedDesktopDetailSourceError, match='CLI SPT Badan') as rejected:
+        save_preferences(destination, {'detail_source': 'json-only'})
+    strings = load_strings()
+    assert _settings_validation_message(rejected.value) == strings['settings.dialog.body.sumber.detail.hanya.cli']
+    assert _settings_validation_message(rejected.value) != strings['settings.dialog.body.periksa.akun.password.dan.jumlah']
+    assert not destination.exists()
+
+
+def test_other_settings_validation_errors_keep_existing_generic_message():
+    from spt_desktop.app import _settings_validation_message
+    assert _settings_validation_message(ValueError('invalid keep_jobs')) == (
+        load_strings()['settings.dialog.body.periksa.akun.password.dan.jumlah']
+    )
+
 def test_dynamic_copy_does_not_weakly_format_unknown_fields():
     key = 'settings.dialog.body.value1.job.partial.gagal.dipilih'
     with pytest.raises(ValueError):
