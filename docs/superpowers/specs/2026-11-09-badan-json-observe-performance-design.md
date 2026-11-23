@@ -1,6 +1,6 @@
 # Corporate `json_observe` performance — measured, proof-preserving follow-up
 
-Original proposal: 2026-11-09. Updated evidence/status: **2026-11-20**.
+Original proposal: 2026-11-09. Updated evidence/status: **2026-11-23** (20 November baseline archived).
 Scope: design and measurement planning **only** in PR #208. The production
 instrumentation and performance implementation were separately reviewed,
 tested and merged through [#234](https://github.com/cepeter-job/spt-downloader/pull/234)
@@ -10,7 +10,105 @@ native correctness and DOM initial-loading diagnostics are independently
 tracked by [#235](https://github.com/cepeter-job/spt-downloader/pull/235)
 (merged as `8726aae`; see current status below).
 
-## Current baseline and decision — 20 November 2026
+## Current baseline and decision — 23 November 2026
+
+Baseline: [main `61dce51`](https://github.com/cepeter-job/spt-downloader/commit/61dce517e221cece74b4cef79f251be54fe39c80)
+(merged #339). This section **supersedes the 20 November status section below**;
+older measurements and acceptance gates remain historical evidence. This PR
+is **documentation/design only**: synchronizing it must not alter scraping,
+source admission, workbook values, parallelism, Stop or CI policy.
+
+### What is now merged, and what remains open
+
+| Track | Status as of 23 Nov |
+| --- | --- |
+| Native observer timing, owned paginator probes | #234/#236 merged; do not mistake residual reclassification for a speedup |
+| Corporate strict CLI JSON-only | #327 merged; still refuses unsupported source without DOM detail-value fallback |
+| Data-conditional/nullable Corporate roots | #328/#329/#330/#331/#332 merged; preserve required-form and present-but-unproved refusals |
+| L11-B null totals, L10-A metadata and visibility, L9 details/footer, L10-B custody | #333/#334/#335/#336/#337 merged |
+| L10-C gate reason and custody-vs-projection classification, L11-B quarter precision | #339 merged; diagnostic does not itself admit Amendment L10-C |
+| Six privacy-safe L10-C `history_*` gate subreasons | [#340](https://github.com/cepeter-job/spt-downloader/pull/340) OPEN: regression/CI/peer review and a fresh live diagnostic are separate gates |
+| Complete L3 domestic DOM `TOTAL` → reviewed `JUMLAH` footer shape | [#341](https://github.com/cepeter-job/spt-downloader/pull/341) OPEN: exact-shape candidate with three-table/60-row regressions; needs CI/merge and live workbook acceptance |
+| First-open versus navigation response chronology (Stage 0b part 2) | Not implemented by #339/#340; separately design and review only after source-compatible measurements |
+| Native larger page size / packet reuse | NOT APPROVED, with no synthetic authenticated requests or speculative replay |
+
+### Latest available selected-scope live evidence (not a controlled benchmark)
+
+The 23 November GUI worker `c2bb6ed` (PR #339 test build, workflow
+`45115019738`, `frozen=false`) finished **COMPLETE** for two submitted
+2025 Corporate returns. The previous comparable GUI worker used `e894f12`
+(workflow `45046507796`). These are two builds, each observed once; they are
+**not** an A/B proof of code-caused performance change or independent release
+acceptance of main `61dce51`.
+
+| Observed outcome | Normal | Amendment 001 |
+| --- | --- | --- |
+| Selected detail source | JSON / `native_verified` | DOM / `projection_incomplete` |
+| Network source capture | 32 accepted, 0 failed | 59 accepted, 0 failed |
+| Source coverage | `complete=true` | `complete=true` |
+| Projection | `complete=true` | `complete=false` |
+| DOM fallback | Not needed for detail values | Still required |
+| L10-C gate | Not present in selected Normal tabs | `corporate.l10c_detail_gate=history` |
+
+All 18 worksheet XML parts (eight Normal, ten Amendment) were byte-identical
+between the two compared workbook exports. This protects against a *new*
+worksheet regression in that pair, **not** against older unmapped source rows,
+missing fields, workbook-wide metadata differences or PDF parity. Only **5/18**
+template mappings were complete; `operation.finished=COMPLETE` refers to the
+job's verified collection/export, not a blanket claim that every projection
+slot is mapped. The submitted Amendment L3 domestic table captured **60 body
+rows and three footers**, but its workbook remained empty/partial because
+the exact DOM `TOTAL` footer was not bound to the approved `JUMLAH` merge;
+#341 targets that presentation gap, not JSON capture.
+
+| Time (seconds) | Earlier `e894f12` | Newer `c2bb6ed` |
+| --- | ---: | ---: |
+| Amendment `json_observe` | 68.65 | 81.10 |
+| Normal `json_observe` | 37.96 | 47.26 |
+| Amendment `return_detail` (DOM) | 117.61 | 147.17 |
+| Normal `return_detail` (JSON) | 60.97 | 78.29 |
+| Worker elapsed (includes dialogs/waits) | 295.02 | 284.67 |
+
+The earlier run waited about **61.1 s** for the selection/overwrite dialogs,
+whereas the newer waited about **3.4 s** for selection. Removing these
+documented waits gives approximately **234.0 s vs 281.3 s** of active
+elapsed time (+20.2% in the newer run), but stages overlap and cannot
+be summed into an independent grand total. Portal/host latency is a
+hypothesis, not an established cause; repeat on the same build, same
+record/scope, with unchanged diagnostics before ranking optimization.
+
+### Immediate sequencing and acceptance boundaries
+
+1. **Native Normal:** verify the same selected scope with current exact-head
+   `--detail-source json-only --spt-badan-only`, preserving packet provenance,
+   source coverage, original values and workbook/PDF checks; do not extend its
+   success to other forms or Amendment.
+2. **Amendment L10-C ([#338](https://github.com/cepeter-job/spt-downloader/issues/338)):**
+   once #340 has passing exact-head CI and review, use a fresh authorized live
+   run to identify whether history refuses capture API, source controls, grid
+   structure, bind-start, bind-end or lifetime. Never bypass those guards just
+   to select JSON. `projection_incomplete` differs from missing capture.
+3. **L3 Amendment DOM:** after #341 passes CI and merges, rerun the complete
+   three-table source and verify all 60 ordered rows, exact three footer
+   mappings, original source custody and remaining PARTIAL audit identities.
+   This is distinct from issue #161's much larger 4,654-row L3-B test.
+4. **Large DOM #161:** retain full-page/row/footer and end-to-end workbook
+   acceptance, the existing bounded timeout, original UI owner, Stop, and
+   fail-closed refusal; #321/#326 improvements alone did not prove 4,654-row
+   completeness.
+5. **Other open acceptance tracks:** #291 DOM presentation/DER, #307 frozen
+   HOST_CPU forwarding, #302 XML UI catalog, #156 MPN; #168/#169, #288/#290
+   remain independent deferred design backlogs. Do not conflate these with
+   the documentation-only PR #208.
+
+No claim of new native page-size options, packet reuse, skipped security
+checks, whole-record DOM/JSON mixing, or runtime performance gain is made
+by this update. Each implementation remains subject to independent tests,
+review and CI at its exact head.
+
+---
+
+## Archived baseline and decision — 20 November 2026
 
 Baseline: [main `818246f`](https://github.com/cepeter-job/spt-downloader/commit/818246f9c0d1714bdf02941f3edb28644bb662ad).
 This section supersedes historical implementation/dependency status below,
