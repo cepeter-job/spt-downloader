@@ -41,6 +41,16 @@ def test_benchmark_fields_are_whitelisted_without_private_values(tmp_path):
     assert 'SYNTHETIC-SECRET' not in json.dumps(rows) and 'private.invalid' not in json.dumps(rows)
 
 
+def test_detail_source_projection_incomplete_reason_survives_allowlist(tmp_path):
+    """The new projection_incomplete category must reach the JSONL, not vanish."""
+    with d.session(tmp_path, 'worker') as log:
+        d.record('detail.source', source_requested='json-first', source_used='dom',
+                 source_reason='projection_incomplete', tax_kind='corporate', ordinal=1)
+        assert log.flush()
+    row = next((r for r in logs(tmp_path) if r['event'] == 'detail.source'), None)
+    assert row is not None and row.get('source_reason') == 'projection_incomplete'
+
+
 def test_benchmark_fields_reject_arbitrary_objects_and_private_numeric_ids(tmp_path):
     class Secret:
         def __str__(self):

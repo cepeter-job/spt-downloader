@@ -1537,6 +1537,21 @@ def _capture_failure_message(error):
     return 'capture_failed'
 
 
+def _detail_source_reason(*, eligible, corporate, masa, forms, manifest, decoded, projection_complete):
+    """Classify why the native JSON source was or was not used.
+
+    Custody/coverage refusal categories stay distinct from the semantic
+    projection status: projection_complete is None when the projection was
+    never evaluated, so a coverage refusal keeps the coverage_incomplete label.
+    """
+    return ('native_verified' if eligible else
+            'unsupported_tax' if not corporate and not masa else
+            'forms_unavailable' if forms is None else
+            'capture_incomplete' if not manifest['complete'] else
+            'adapter_ineligible' if not decoded['eligible'] else
+            'projection_incomplete' if projection_complete is False else 'coverage_incomplete')
+
+
 @diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
@@ -2909,25 +2924,23 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     # tidak dicampur dengan sebagian nilai DOM dan dianggap satu capture utuh.
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
-    # Custody completeness (the JSON evidence) and projection completeness (the
-    # reviewed worksheet projection) are independent: a complete custody capture
-    # whose sections still carry an unprojected form is not a native source.
-    projection_complete = eligible
+    # Projection completeness is a truth value independent of custody/coverage:
+    # a complete custody capture whose sections still carry an unprojected form
+    # is not a native source, but the coverage refusal category stays distinct.
+    # None means the projection was never evaluated (custody/coverage refused).
+    projection_complete = None
     if eligible and corporate:
         # Capture completeness is not template completeness: a form that still
         # carries the generic payload dump was never projected into the
         # worksheet, so the complete DOM capture must keep the output.
         from coretax_json import has_audit_dump_tables
-        if has_audit_dump_tables((decoded or {}).get('sections') or (),
-                                 provenance=(decoded or {}).get('provenance')):
+        projection_complete = not has_audit_dump_tables(
+            (decoded or {}).get('sections') or (), provenance=(decoded or {}).get('provenance'))
+        if not projection_complete:
             eligible = False
-            projection_complete = False
-    source_reason = ('native_verified' if eligible else
-                     'unsupported_tax' if not corporate and not masa else
-                     'forms_unavailable' if forms is None else
-                     'capture_incomplete' if not manifest['complete'] else
-                     'adapter_ineligible' if not decoded['eligible'] else
-                     'projection_incomplete' if not projection_complete else 'coverage_incomplete')
+    source_reason = _detail_source_reason(eligible=eligible, corporate=corporate, masa=masa,
+                                          forms=forms, manifest=manifest, decoded=decoded,
+                                          projection_complete=projection_complete)
     strict = detail_source == 'json-only'
     source_used = 'json' if eligible else 'none' if strict else 'dom'
     diagnostics.record('detail.source', source_requested=detail_source,
