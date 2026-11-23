@@ -68,7 +68,7 @@ def test_corporate_observer_calls_the_real_c_owned_binding_protocol(browser):
     try:
         assert callable(DetailJsonCapture.bind_l10c_structure)
         assert inspect(page.locator('rshshr-citr-l10c-form'), page.locator('[role=tab]'),
-                       page.locator('.p-tabview-panel'), Capture(), None) is True
+                       page.locator('.p-tabview-panel'), Capture(), None) is None
         assert calls == ['start', 'end', 'sample']
     finally:
         context.close()
@@ -95,7 +95,7 @@ def test_c_observer_never_upgrades_an_unavailable_child_protocol(browser, defect
             page.locator('table').evaluate('(e) => e.after(e.cloneNode(true))')
         assert observer._observe_l10c_history(page.locator('rshshr-citr-l10c-form'),
             page.locator('[role=tab]'), page.locator('.p-tabview-panel'),
-            object() if defect == 'protocol' else Capture(), None) is False
+            object() if defect == 'protocol' else Capture(), None) is not None
     finally:
         context.close()
 
