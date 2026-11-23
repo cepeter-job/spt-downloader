@@ -127,7 +127,9 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
     """Read-only dashboard and authorization snapshot. Never follows links.
 
     protected overlaps status counts: every unfinished/unknown job and every
-    retained newest-N job is protected *from automatic pruning*.
+    retained newest-N job is protected *from automatic pruning*. A partial
+    scan still returns the subset that passed every check; scan_complete stays
+    False so the dashboard bound and automatic pruning remain fail-closed.
     """
     pruning.validate_keep_jobs(keep)
     result = {'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
@@ -179,7 +181,10 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
                     TimeoutError, UnicodeError):
                 result['scan_complete'] = False
                 result['protected'] += 1
-        result['removable'] = tuple(authorized) if result['scan_complete'] else ()
+        # Isolate unverifiable jobs instead of cancelling every manual
+        # candidate. Each authorized entry passed its own full inspection,
+        # and delete_incomplete_jobs revalidates the approved snapshot.
+        result['removable'] = tuple(authorized)
         return result
 
 
