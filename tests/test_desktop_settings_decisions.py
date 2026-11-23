@@ -708,7 +708,7 @@ def test_incomplete_cleanup_refuses_unsaved_changes(settings, monkeypatch):
     assert not app._manual_prune_busy
 
 
-def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
+def test_owned_app_starts_inventory_and_async_auto_prune_only(
         tmp_path, monkeypatch):
     from types import SimpleNamespace
     preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
@@ -729,20 +729,196 @@ def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
     monkeypatch.setattr(gui, 'inspect_job_storage',
                         lambda *args, **kwargs: calls.append('inspect') or preview)
     monkeypatch.setattr(gui, 'delete_incomplete_jobs',
-                        lambda *args, **kwargs: pytest.fail('Startup must not delete jobs'))
+                        lambda *args, **kwargs: pytest.fail('Startup must not delete PARTIAL/FAILED'))
     monkeypatch.setattr(gui, 'prune_published_jobs',
-                        lambda *args, **kwargs: pytest.fail('Startup inspect is read-only'))
+                        lambda *a, **kw: calls.append(('prune', a[2], kw.get('exclude'))) or 0)
     root = tk.Tk()
     app = gui.App(root, tmp_path)
     try:
         _pump_manual_prune(root)
-        assert calls == ['inspect']
+        assert calls == ['inspect', ('prune', 10, None)]
         assert app._storage_snapshot == preview
         assert not app._storage_pending
     finally:
         app._dispose()
         root.destroy()
 
+
+def test_startup_auto_prune_respects_zero_retention(tmp_path, monkeypatch):
+    prefs = dict(gui.load_preferences(tmp_path))
+    prefs['keep_jobs'] = 0
+    monkeypatch.setattr(gui, 'load_preferences', lambda *args: prefs)
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('keep_jobs=0 disables pruning'))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert app.preferences['keep_jobs'] == 0
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_auto_prune_excludes_active_job(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    token = 'a' * 32
+    active = Controller()
+    active.active = True
+    active.job_id = token
+    calls = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'JobController', lambda *args: active)
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 1, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 1, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: calls.append(kw.get('exclude')) or 0)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert calls == [token]
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_gui_close_does_not_block_on_startup_prune(tmp_path, monkeypatch):
+    import threading as real_threading
+    import time
+
+    release = real_threading.Event()
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: release.wait(10))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        worker = app._startup_prune_thread
+        assert worker is not None and worker.is_alive()
+        assert worker.daemon is False
+        began = time.monotonic()
+        app._dispose()
+        assert time.monotonic() - began < 1
+        assert worker.is_alive() and worker.daemon is False
+        assert app._startup_prune_thread is None
+        release.set()
+        worker.join(5)
+        assert not worker.is_alive()
+    finally:
+        release.set()
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_prune_ignores_injected_controller(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('No auto-clean without owned controller'))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path, Controller())
+    try:
+        app._startup_prune()
+        assert app._startup_prune_thread is None
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_startup_prune_swallows_downloads_and_prune_failures(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: {
+        'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,
+        'protected': 0, 'estimated_bytes': 0, 'scan_complete': True,
+        'removable': ()})
+    failures = []
+
+    def failing_downloads():
+        failures.append('downloads')
+        raise OSError('SYNTHETIC')
+
+    monkeypatch.setattr(gui, 'downloads_folder', failing_downloads)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert failures == ['downloads']
+
+        monkeypatch.setattr(gui, 'downloads_folder', lambda: tmp_path)
+        monkeypatch.setattr(gui, 'prune_published_jobs',
+                            lambda *a, **kw: (_ for _ in ()).throw(ValueError('SYNTHETIC')))
+        app._startup_prune()
+        assert failures == ['downloads']
+    finally:
+        app._dispose()
+        root.destroy()
+
+
+def test_dispose_tolerates_retired_startup_callback(tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *a, **kw: None)
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    original_cancel = root.after_cancel
+    pending = app._startup_prune_after
+    assert pending is not None
+
+    def cancel(token):
+        if token == pending:
+            raise tk.TclError('SYNTHETIC_RETIRED')
+        return original_cancel(token)
+
+    monkeypatch.setattr(root, 'after_cancel', cancel)
+    try:
+        app._dispose()
+        assert app._startup_prune_after is None
+    finally:
+        app._dispose()
+        root.destroy()
 
 def test_incomplete_cleanup_partial_scan_offers_verified_candidates_only(
         settings, monkeypatch):
@@ -791,7 +967,6 @@ def test_incomplete_cleanup_partial_scan_offers_verified_candidates_only(
     assert approvals == [((token, digest),)]
     assert len(prompts) == 1 and token not in prompts[0]
     assert not app._manual_prune_busy and not ctl.active
-
 
 def test_incomplete_cleanup_partial_scan_without_candidates_stops(
         settings, monkeypatch):
