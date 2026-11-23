@@ -658,3 +658,18 @@ def test_prune_attempt_logs_zero_result_reason(tmp_path, monkeypatch):
     assert len(rows) == 1
     assert rows[0]['removed'] == 0 and rows[0]['eligible'] == 0
     assert rows[0]['reason'] == 'no_candidates'
+
+
+def test_manual_empty_approval_still_logs_prune_attempt(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    _job(root, 1, complete=True, sealed=True, final=published)
+    with diagnostics.session(tmp_path, 'gui'):
+        assert prune.prune_published_jobs(
+            root, downloads, keep=1, allowed_ids=(), report=True) == {
+                'removed': 0, 'incomplete': False}
+    rows = [row for row in records(tmp_path)
+            if row['event'] == 'jobs.prune_attempt']
+    assert len(rows) == 1 and rows[0]['reason'] == 'no_candidates'

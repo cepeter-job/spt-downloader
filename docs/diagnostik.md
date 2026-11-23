@@ -1291,8 +1291,10 @@ masing-masing jumlah kandidat yang disetujui, job yang benar-benar dihapus, dan
 alasan penolakan. `jobs.incomplete_rejected` menyertakan field `reason` dengan
 kategori tetap: `active`, `unknown`, `global_recovery`, `deadline`,
 `seal_or_recovery`, `no_terminal`, `wrong_status`, `recovery`, `changed`,
-`error`, `partial_delete`, dan `disabled`. Tidak ada ID job, path, atau pesan
-bebas yang dicatat.
+`error`, dan `disabled`. `rejected` menghitung job yang ditolak
+(`selected - removed`), bukan jumlah baris alasan; hasil sebagian tidak
+mendapat kategori alasan agregat. Tidak ada ID job, path, atau pesan bebas
+yang dicatat.
 
 `jobs.prune_attempt` dicatat oleh auto-clean setiap kali ia dipanggil, termasuk
 ketika tidak ada job yang dihapus. Field `removed` dan `eligible` adalah counter;

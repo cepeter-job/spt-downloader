@@ -751,11 +751,12 @@ class App:
                 messagebox.showerror(copy_text('settings.dialog.title.pembersihan.gagal'),
                     copy_text('settings.dialog.body.pemeriksaan.atau.penghapusan.tidak.tuntas'), parent=dialog)
             elif kind == 'deleted':
-                rejected = result.get('rejected', ())
+                reasons = result.get('rejected', ())
+                rejected = max(0, len(approvals) - result['removed'])
                 diagnostics.record('jobs.incomplete_cleanup',
                                    selected=len(approvals), removed=result['removed'],
-                                   rejected=len(rejected))
-                for reason in rejected:
+                                   rejected=rejected)
+                for reason in reasons:
                     diagnostics.record('jobs.incomplete_rejected', reason=reason)
                 if result['incomplete']:
                     messagebox.showwarning(copy_text('settings.dialog.title.pembersihan.tidak.tuntas'),

@@ -277,8 +277,6 @@ def delete_incomplete_jobs(root, approvals, *, active_id=None,
             incomplete = True
             reject('error')
     failed = removed != len(approvals)
-    if failed and 'partial_delete' not in reasons:
-        reject('partial_delete')
     result = {'removed': removed, 'incomplete': bool(incomplete or failed)}
     if report_reasons:
         result['rejected'] = tuple(reasons)

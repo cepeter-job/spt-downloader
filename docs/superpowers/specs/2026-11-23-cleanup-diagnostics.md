@@ -14,19 +14,23 @@ menghapus apa pun.
 ## Perilaku yang diusulkan
 
 1. `jobs.incomplete_cleanup` mencatat tiga counter: `selected`, `removed`,
-   `rejected`. Event ini dipancarkan sekali setelah konfirmasi dan penghapusan
-   sederhana selesai, bukan saat pratinjau.
+   dan `rejected` (= `selected - removed`, jumlah **job** yang ditolak, bukan
+   jumlah baris alasan). Event ini dipancarkan sekali setelah konfirmasi dan
+   penghapusan sederhana selesai, bukan saat pratinjau.
 2. `jobs.incomplete_rejected` mencatat satu field enum `reason` tanpa ID job,
    path, atau pesan bebas. Kategori: `active`, `unknown`, `global_recovery`,
    `deadline`, `seal_or_recovery`, `no_terminal`, `wrong_status`, `recovery`,
-   `changed`, `error`, `partial_delete`, `disabled`.
+   `changed`, `error`, `disabled`. Tidak ada kategori agregat
+   `partial_delete`: keadaan sebagian dinyatakan oleh `removed < selected`
+   dan `incomplete`, bukan oleh alasan per job.
 3. `delete_incomplete_jobs(..., report_reasons=True)` mengembalikan field
    tambahan `rejected` berupa tuple kategori; pemanggil lama tanpa opsi ini
    tetap menerima bentuk hasil yang sama persis.
 4. `jobs.prune_attempt` dicatat oleh `prune_published_jobs()` untuk setiap
    pemanggilan, termasuk ketika `removed == 0`. Field: `removed`, `eligible`,
    dan enum `reason`: `removed`, `no_candidates`, `no_eligible_candidates`,
-   `verification_failed`, `disabled`.
+   `verification_failed`, `disabled`. Pemanggilan manual dengan
+   `allowed_ids=()` juga tercatat sebagai `no_candidates`.
 5. Semua field baru masuk allowlist COUNTERS/ENUMS di `diagnostics.py` dan
    didokumentasikan di `docs/diagnostik.md`. Tidak ada field yang membawa
    nilai, path, ID job, atau alasan bebas.

@@ -448,6 +448,8 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
         if len(approved) != len(allowed_ids):
             raise ValueError('Duplicate approved prune candidates')
         if not approved:
+            diagnostics.record('jobs.prune_attempt', removed=0, eligible=0,
+                                reason='no_candidates')
             return {'removed': 0, 'incomplete': False} if report else 0
     else:
         approved = None

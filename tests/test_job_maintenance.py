@@ -229,6 +229,5 @@ def test_rejection_report_identifies_changed_snapshot(tmp_path, monkeypatch):
     result = maintenance.delete_incomplete_jobs(
         root, approvals, report_reasons=True)
     assert result['removed'] == 1 and result['incomplete'] is True
-    assert 'changed' in result['rejected']
-    assert 'partial_delete' in result['rejected']
+    assert result['rejected'] == ('changed',)
     assert not first.exists() and changed.is_dir()
