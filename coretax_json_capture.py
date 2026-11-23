@@ -338,14 +338,14 @@ _L10C_HISTORY = """(d) => {
  const selectors=['rshshr-corporate-income-tax-return','rshshr-citr-main-form',
    'rshshr-citr-l10c-form','rsh-citr-l10c-grid1','ui-grid-offline','p-table','table'];
  const hosts=selectors.slice(0,4).join(','), candidates=selectors.join(',');
- const state={available:d===document&&!d.querySelector(hosts),changed:false,complete:false};
+ const state={available:d===document&&!d.querySelector(hosts),changed:false,complete:false,why:''};
  let roles=Array(7).fill(null),ancestors=new Set(),controls=null,tab=null,panel=null;
  let started=false,ended=false,remaining=4096;
- const stop=()=>{state.available=false;observer.disconnect();};
- const debit=()=>{if(--remaining<0){stop();return false;}return true;};
+ const stop=why=>{state.available=false;state.why=why||'unknown';observer.disconnect();};
+ const debit=()=>{if(--remaining<0){stop('budget');return false;}return true;};
  const inside=node=>roles[2]&&(node===roles[2]||roles[2].contains(node));
  const remember=node=>{let depth=0;for(let p=node.parentElement;p;p=p.parentElement){
-   ancestors.add(p);if(++depth>64||ancestors.size>128){stop();return;}}};
+   ancestors.add(p);if(++depth>64||ancestors.size>128){stop('ancestors');return;}}};
  const adopt=(node,index,removed)=>{
    if(!debit())return;
    if(removed||roles[index]&&roles[index]!==node){state.changed=true;return;}
@@ -357,7 +357,7 @@ _L10C_HISTORY = """(d) => {
    const visit=element=>{
      const index=selectors.findIndex(selector=>element.matches(selector));
      if(index<4||inside(element)||inside(target)||roles.includes(element))adopt(element,index,removed);
-     else if(!target.isConnected&&(roles.includes(target)||ancestors.has(target)))stop();
+     else if(!target.isConnected&&(roles.includes(target)||ancestors.has(target)))stop('target_disconnected');
    };
    if(node.matches(candidates))visit(node);
    for(const element of node.querySelectorAll(candidates)){if(remaining<0)break;visit(element);}
@@ -429,7 +429,7 @@ _L10C_HISTORY = """(d) => {
         roles[index].closest(selectors[owner])!==roles[owner]){state.changed=true;return false;}
      for(let p=roles[index].parentElement;p&&p!==roles[owner];p=p.parentElement){
        if(p.localName.includes('-')&&(p.localName.endsWith('-form')||
-          !/^(p|ui|rsh-citr|rshshr-citr)-/.test(p.localName))){stop();return false;}
+          !/^(p|ui|rsh-citr|rshshr-citr)-/.test(p.localName))){stop('owner_chain');return false;}
      }
    }
    const form=roles[2];
@@ -438,12 +438,12 @@ _L10C_HISTORY = """(d) => {
    const radios=form.querySelectorAll('p-radiobutton[formcontrolname="Question"]');
    const businessInputs=[...form.querySelectorAll('input')].filter(node=>!(roles[4].contains(node)&&
      node.closest('p-paginator')&&node.closest('p-table')===roles[5]));
-   if(years.length!==1||tins.length!==1||radios.length!==2||businessInputs.length!==4){stop();return false;}
+   if(years.length!==1||tins.length!==1||radios.length!==2||businessInputs.length!==4){stop('controls');return false;}
    const inputs=[...radios].map(radio=>radio.querySelectorAll('input[type="radio"]'));
-   if(inputs.some(nodes=>nodes.length!==1)){stop();return false;}
+   if(inputs.some(nodes=>nodes.length!==1)){stop('radio_inputs');return false;}
    const current=[years[0],tins[0],...radios,...inputs.map(nodes=>nodes[0])];
    if(current.some(node=>node.closest(selectors[2])!==form)||
-      current.filter(node=>node.localName==='input').some(node=>!node.disabled)){stop();return false;}
+      current.filter(node=>node.localName==='input').some(node=>!node.disabled)){stop('current_controls');return false;}
    if(controls&&current.some((node,index)=>node!==controls[index])){state.changed=true;return false;}
    if(!controls)controls=current;
    return true;
@@ -476,7 +476,7 @@ _L10C_HISTORY = """(d) => {
    if(args.form!==roles[2]||args.grid!==roles[3]||args.table!==roles[6])state.changed=true;
    if(args.phase==='start'&&!started){tab=args.tab;panel=args.panel;}
    else if(args.phase!=='end'||!started||ended||tab!==args.tab||panel!==args.panel)state.changed=true;
-   if(!enabled(true)){if(started)state.changed=true;else stop();}
+   if(!enabled(true)){if(started)state.changed=true;else stop('enabled');}
    if(state.available&&!state.changed){if(args.phase==='start')started=true;else ended=true;}
    return sample();
  },disconnect:()=>{observer.disconnect();roles=[];ancestors.clear();controls=null;tab=null;panel=null;}};
@@ -660,6 +660,7 @@ class DetailJsonCapture:
         self._l10c_unavailable = False
         self._l10c_bind_reason = None
         self._l10c_state_reason = None
+        self._l10c_unavailable_why = ''
         self._l10c_clock_end = None
         self._final_clock = None
         from coretax_corporate_l10d import L10DHistory
@@ -1061,8 +1062,9 @@ class DetailJsonCapture:
         return value
 
     def _l10c_state(self, state):
-        if (not isinstance(state, dict) or set(state) != {'available', 'changed', 'complete'}
-                or any(type(value) is not bool for value in state.values())):
+        if (not isinstance(state, dict) or set(state) - {'why'} != {'available', 'changed', 'complete'}
+                or any(type(state[key]) is not bool for key in ('available', 'changed', 'complete'))
+                or ('why' in state and type(state['why']) is not str)):
             self._l10c_unavailable = True
             self._l10c_state_reason = 'malformed'
             return None
@@ -1071,6 +1073,7 @@ class DetailJsonCapture:
         if not state['available']:
             self._l10c_unavailable = True
             self._l10c_state_reason = 'unavailable'
+            self._l10c_unavailable_why = state.get('why', '')
         return state
 
     def bind_l10c_structure(self, form, grid, table, tab, panel, *, phase, check_cancel=None):
@@ -1102,6 +1105,7 @@ class DetailJsonCapture:
                 self._l10c_bind_reason = 'state_' + phase + '_eval'
                 return False
             self._l10c_state_reason = None
+            self._l10c_unavailable_why = ''
             state = self._l10c_state(probe_result)
             result = bool(state is not None and not self._l10c_unavailable
                           and (phase == 'start' or state['complete']))
@@ -1111,7 +1115,9 @@ class DetailJsonCapture:
                                               + (self._l10c_state_reason or 'malformed'))
                 elif self._l10c_unavailable:
                     self._l10c_bind_reason = ('state_' + phase + '_'
-                                              + (self._l10c_state_reason or 'unavailable'))
+                                              + (self._l10c_state_reason or 'unavailable')
+                                              + ('_' + self._l10c_unavailable_why
+                                                 if self._l10c_unavailable_why else ''))
                 else:
                     self._l10c_bind_reason = 'state_' + phase + '_incomplete'
             return result
