@@ -293,15 +293,15 @@ def test_bind_l10c_structure_records_each_refusal_reason():
     # unavailable JS state
     cap = make_capture(lifetime={'kind': 'x'}, history=object())
     cap._l10c_probe = lambda operation, check_cancel=None: {
-        'available': False, 'changed': False, 'complete': False}
+        'available': False, 'changed': False, 'complete': False, 'why': ''}
     cap._l10c_state = DetailJsonCapture._l10c_state.__get__(cap)
     assert bind(cap) is False and cap._l10c_bind_reason == 'state_start_unavailable'
 
     # successful start control
     cap = make_capture(lifetime={'kind': 'x'}, history=object(),
-                       state={'available': True, 'changed': False, 'complete': False})
+                       state={'available': True, 'changed': False, 'complete': False, 'why': ''})
     cap._l10c_probe = lambda operation, check_cancel=None: {
-        'available': True, 'changed': False, 'complete': False}
+        'available': True, 'changed': False, 'complete': False, 'why': ''}
     assert bind(cap) is True and cap._l10c_bind_reason is None
 
 
@@ -325,13 +325,13 @@ def test_bind_l10c_structure_end_requires_complete_state():
     cap._l10c_probe = probe
     cap._l10c_state = lambda value: value
     args = [Locator() for _ in range(5)]
-    incomplete = {'available': True, 'changed': False, 'complete': False}
+    incomplete = {'available': True, 'changed': False, 'complete': False, 'why': ''}
     cap._l10c_probe = lambda operation, check_cancel=None: incomplete
     cap._l10c_state = lambda value: incomplete
     assert cap.bind_l10c_structure(*args, phase='end') is False
     assert cap._l10c_bind_reason == 'state_end_incomplete'
     cap._l10c_bind_reason = None
-    complete = {'available': True, 'changed': False, 'complete': True}
+    complete = {'available': True, 'changed': False, 'complete': True, 'why': ''}
     cap._l10c_probe = lambda operation, check_cancel=None: complete
     cap._l10c_state = lambda value: complete
     assert cap.bind_l10c_structure(*args, phase='end') is True
@@ -392,7 +392,7 @@ def test_bind_eval_failure_blocks_later_lifetime_candidate():
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError('bind evaluation failed')
-            return {'available': True, 'changed': False, 'complete': True}
+            return {'available': True, 'changed': False, 'complete': True, 'why': ''}
 
     cap = object.__new__(DetailJsonCapture)
     cap._l10c_history = History()

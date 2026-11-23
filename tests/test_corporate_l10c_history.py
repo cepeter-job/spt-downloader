@@ -103,8 +103,8 @@ def test_c_observer_never_upgrades_an_unavailable_child_protocol(browser, defect
 def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser):
     context, page, document, history = armed(browser)
     try:
-        assert bind(page, history, 'start') == {'available': True, 'changed': False, 'complete': False}
-        assert bind(page, history, 'end') == {'available': True, 'changed': False, 'complete': True}
+        assert bind(page, history, 'start') == {'available': True, 'changed': False, 'complete': False, 'why': ''}
+        assert bind(page, history, 'end') == {'available': True, 'changed': False, 'complete': True, 'why': ''}
         assert history.evaluate('(h) => h.sample()')['complete'] is True
         from coretax_json_capture import _L10C_FINAL_SAMPLE
         final = history.evaluate(_L10C_FINAL_SAMPLE)
