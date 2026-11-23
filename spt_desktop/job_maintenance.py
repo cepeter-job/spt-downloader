@@ -183,12 +183,22 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
         return result
 
 
-def delete_incomplete_jobs(root, approvals, *, active_id=None):
+def delete_incomplete_jobs(root, approvals, *, active_id=None,
+                           report_reasons=False):
     """Delete only inspected, explicitly selected incomplete job snapshots.
 
     approvals: tuple of (32-hex job_id, 64-hex snapshot hash). This is not a
     generic arbitrary-directory cleaner. Output Downloads is never consulted.
+    report_reasons adds a fixed-enum `rejected` tuple to the result; callers
+    that omit it receive the original result shape unchanged.
     """
+    if type(report_reasons) is not bool:
+        raise ValueError('Invalid rejection reporting mode')
+    reasons = []
+
+    def reject(reason):
+        if report_reasons:
+            reasons.append(reason)
     if (not isinstance(approvals, tuple) or len(approvals) > 4096
             or any(not isinstance(pair, tuple) or len(pair) != 2
                    or type(pair[0]) is not str or not pruning._JOB.fullmatch(pair[0])
@@ -199,21 +209,31 @@ def delete_incomplete_jobs(root, approvals, *, active_id=None):
             or len({item[0] for item in approvals}) != len(approvals)):
         raise ValueError('Invalid manually approved job snapshots')
     if not pruning._windows() or not approvals:
-        return {'removed': 0, 'incomplete': bool(approvals)}
+        reject('disabled')
+        result = {'removed': 0, 'incomplete': bool(approvals)}
+        if report_reasons:
+            result['rejected'] = tuple(reasons)
+        return result
     removed, incomplete = 0, False
     with pruning._PRUNE_LOCK:
         try:
             entries, global_recovery = _job_directories(root)
             if global_recovery:
-                return {'removed': 0, 'incomplete': True}
+                reject('global_recovery')
+                result = {'removed': 0, 'incomplete': True}
+                if report_reasons:
+                    result['rejected'] = tuple(reasons)
+                return result
             known = {job_id: job for _, job_id, job in entries}
             deadline_global = time.monotonic() + 120
             for job_id, approved_digest in approvals:
                 if time.monotonic() >= deadline_global:
                     incomplete = True
+                    reject('deadline')
                     break
                 if job_id == active_id or job_id not in known:
                     incomplete = True
+                    reject('active' if job_id == active_id else 'unknown')
                     continue
                 job = known[job_id]
                 try:
@@ -221,22 +241,30 @@ def delete_incomplete_jobs(root, approvals, *, active_id=None):
                     with DirectoryGuard() as guard:
                         expected = pruning._checked_ancestors(job)
                         guard.include(expected)
-                        if ((job / pruning.SEAL).exists() or _has_recovery(job)
-                                or _terminal_status(job, deadline) is None
-                                or _classification(job, deadline) not in
-                                ('PARTIAL', 'FAILED')):
+                        if (job / pruning.SEAL).exists() or _has_recovery(job):
                             incomplete = True
+                            reject('seal_or_recovery')
+                            continue
+                        if _terminal_status(job, deadline) is None:
+                            incomplete = True
+                            reject('no_terminal')
+                            continue
+                        if _classification(job, deadline) not in ('PARTIAL', 'FAILED'):
+                            incomplete = True
+                            reject('wrong_status')
                             continue
                         # Recovery may have begun since the selection screen.
                         _, recovery = _job_directories(root)
                         if recovery:
                             incomplete = True
+                            reject('recovery')
                             continue
                         inventory = {}
                         pruning._tree_digest(
                             job, deadline=deadline, inventory=inventory)
                         if _snapshot_digest(job, inventory) != approved_digest:
                             incomplete = True
+                            reject('changed')
                             continue
                         _remove_tree(job, expected[job], guard, expected, deadline,
                                      verified_inventory=inventory)
@@ -244,6 +272,14 @@ def delete_incomplete_jobs(root, approvals, *, active_id=None):
                 except (OSError, ValueError, TypeError, KeyError, RecursionError,
                         TimeoutError, UnicodeError):
                     incomplete = True
+                    reject('error')
         except (OSError, ValueError, TypeError):
             incomplete = True
-    return {'removed': removed, 'incomplete': incomplete or removed != len(approvals)}
+            reject('error')
+    failed = removed != len(approvals)
+    if failed and 'partial_delete' not in reasons:
+        reject('partial_delete')
+    result = {'removed': removed, 'incomplete': bool(incomplete or failed)}
+    if report_reasons:
+        result['rejected'] = tuple(reasons)
+    return result

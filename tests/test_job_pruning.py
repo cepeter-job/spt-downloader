@@ -643,3 +643,18 @@ def test_original_seal_bytes_are_the_fingerprint_used_for_deletion(
         'removed': 0, 'incomplete': True}
     assert old.is_dir() and newest.is_dir()
     assert (published / 'resume.xlsx').is_file()
+
+
+def test_prune_attempt_logs_zero_result_reason(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    _job(root, 1, complete=True, sealed=True, final=published)
+    with diagnostics.session(tmp_path, 'gui'):
+        assert prune.prune_published_jobs(root, downloads, keep=1) == 0
+    rows = [row for row in records(tmp_path)
+            if row['event'] == 'jobs.prune_attempt']
+    assert len(rows) == 1
+    assert rows[0]['removed'] == 0 and rows[0]['eligible'] == 0
+    assert rows[0]['reason'] == 'no_candidates'

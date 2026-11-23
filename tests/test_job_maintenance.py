@@ -216,3 +216,19 @@ def test_unmarked_legacy_partial_is_counted_but_not_authorized(
     assert inventory['partial'] == 1 and inventory['protected'] == 1
     assert inventory['removable'] == ()
     assert old.is_dir()
+
+
+def test_rejection_report_identifies_changed_snapshot(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    first = _job(root, 1, complete=False)
+    changed = _job(root, 2, complete=False)
+    approvals = _approve(maintenance.inspect_job_storage(root))
+    assert len(approvals) == 2
+    (changed / 'source.json').write_text('{"synthetic":"changed"}')
+
+    result = maintenance.delete_incomplete_jobs(
+        root, approvals, report_reasons=True)
+    assert result['removed'] == 1 and result['incomplete'] is True
+    assert 'changed' in result['rejected']
+    assert 'partial_delete' in result['rejected']
+    assert not first.exists() and changed.is_dir()

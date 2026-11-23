@@ -742,3 +742,53 @@ def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
     finally:
         app._dispose()
         root.destroy()
+
+
+def test_incomplete_cleanup_records_counts_without_job_identity(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, app, ctl, dialog, path, writes, errors = settings
+    token, digest = 'a' * 32, 'b' * 64
+    preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
+               'protected': 1, 'estimated_bytes': 2048,
+               'scan_complete': True,
+               'removable': ({'id': token, 'status': 'PARTIAL',
+                              'bytes': 2048, 'digest': digest,
+                              'modified_ns': 1_700_000_000_000_000_000},)}
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: {'removed': 1, 'incomplete': False,
+                                          'rejected': ()})
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *a, **kw: True)
+    monkeypatch.setattr(gui.messagebox, 'showinfo', lambda *a, **kw: None)
+
+    with diagnostics.session(path, 'gui'):
+        button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+        _pump_manual_prune(root)
+        picker = next(w for w in widgets(root)
+                      if isinstance(w, tk.Toplevel) and w.title() ==
+                      copy_text('settings.window.title.pilih.job.partial.gagal'))
+        table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+        table.selection_set(token)
+        button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
+        _pump_manual_prune(root)
+
+    rows = records(path)
+    cleanup = [row for row in rows if row['event'] == 'jobs.incomplete_cleanup']
+    assert len(cleanup) == 1
+    assert (cleanup[0]['selected'], cleanup[0]['removed'],
+            cleanup[0]['rejected']) == (1, 1, 0)
+    assert not any(row['event'] == 'jobs.incomplete_rejected' for row in rows)
+    assert not any(token in str(row) for row in rows)
