@@ -228,6 +228,24 @@ def test_corporate_l10c_detail_gate_keeps_only_reviewed_fixed_reason(tmp_path):
     assert secret not in json.dumps(records(tmp_path))
 
 
+def test_corporate_l10c_detail_gate_admits_each_state_unavailable_why(tmp_path):
+    """Every value-free why code the JS stop() can emit must survive the
+    allowlist, otherwise the gate reason is silently dropped and the
+    projection_incomplete blocker stays a black box."""
+    d = diagnostics()
+    whys = ('budget', 'ancestors', 'target_disconnected', 'owner_chain',
+            'controls', 'radio_inputs', 'current_controls', 'enabled')
+    values = ['history_bind_' + phase + '_state_' + phase + '_unavailable_' + why
+              for phase in ('start', 'end') for why in whys]
+    with d.session(tmp_path, 'worker') as log:
+        for value in values:
+            d.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=value)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'corporate.l10c_detail_gate']
+    kept = [e.get('corporate_l10c_detail_gate') for e in events]
+    assert kept == values, 'A reviewed state-unavailable why code was discarded'
+
+
 def test_corporate_l10c_detail_gate_rejects_arbitrary_values_without_stringifying(tmp_path):
     d = diagnostics()
     class Untrusted:
