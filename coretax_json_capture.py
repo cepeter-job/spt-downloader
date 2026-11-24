@@ -444,7 +444,9 @@ _L10C_HISTORY = """(d) => {
    if(years.length!==1){stop('controls_years');return false;}
    if(tins.length!==1){stop('controls_tins');return false;}
    if(radios.length!==2){stop('controls_radios');return false;}
-   if(businessInputs.length!==4){stop('controls_business_' + businessInputs.length);return false;}
+   // Clamp so a count above the allowlist ceiling still reports a reason
+   // instead of being discarded and going silent again.
+   if(businessInputs.length!==4){stop('controls_business_' + Math.min(businessInputs.length, 20));return false;}
    const inputs=[...radios].map(radio=>radio.querySelectorAll('input[type="radio"]'));
    if(inputs.some(nodes=>nodes.length!==1)){stop('radio_inputs');return false;}
    const current=[years[0],tins[0],...radios,...inputs.map(nodes=>nodes[0])];

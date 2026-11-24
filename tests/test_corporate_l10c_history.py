@@ -149,6 +149,23 @@ def test_only_grid_paginator_inputs_are_exempt_from_business_control_inventory(b
         context.close()
 
 
+def test_business_control_count_is_clamped_so_the_gate_never_goes_silent(browser):
+    """A count above the allowlist ceiling must still name a reason, otherwise
+    the gate is discarded and the projection_incomplete blocker goes opaque."""
+    context, page, document, history = armed(browser)
+    try:
+        page.evaluate('''() => { const form=document.querySelector('rshshr-citr-l10c-form form');
+            for(let i=0;i<25;i++){const input=document.createElement('input');
+                input.disabled=true;form.appendChild(input);} }''')
+        state = bind(page, history, 'start')
+        assert state['available'] is False
+        assert state['why'] == 'controls_business_20', state['why']
+    finally:
+        history.dispose()
+        document.dispose()
+        context.close()
+
+
 @pytest.mark.parametrize('defect', ['remount', 'detach-reinsert', 'disable-reenable',
     'header-control-replaced', 'radio-enabled-restored', 'duplicate-grid', 'induk-replaced',
     'header-caption', 'footer-added', 'header-replaced-restored', 'footer-added-removed',
