@@ -13,6 +13,7 @@ import importlib
 import pytest
 
 from coretax_json import _CorporateNumber, _UnsupportedMetadata, adapt_corporate_detail
+from coretax_masa_bindings import _number
 import support_json_corpus as corpus
 
 ROUTE = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
@@ -187,6 +188,105 @@ def test_a_negative_difference_is_a_reviewed_shape():
     result = project(form(TotalCommercialDepreciationTangible=_CorporateNumber('32000000'),
                           DiferencesDepreciationTangible=_CorporateNumber('-2000000')))
     assert [field['value'] for field in result['fields']][2] == '-2.000.000'
+
+
+def live_form(**overrides):
+    """The exact recap controls of a real submitted Normal SPT.
+
+    The owner stores the six recap controls verbatim but `Math.round`s
+    `TotalTable1..12`, so the fiscal tangible total carries a 0.21 residual
+    against its whole-rupiah operand sum.
+    """
+    value = {name: _CorporateNumber('0.0') for name in module().L9_TABLE_TOTALS}
+    value.update({
+        'TotalTable1': _CorporateNumber('264166766.0'),
+        'TotalTable2': _CorporateNumber('73587500.0'),
+        'TotalFiscalDepreciationTangible': _CorporateNumber('337754266.21'),
+        'TotalCommercialDepreciationTangible': _CorporateNumber('559277996.0'),
+        'DiferencesDepreciationTangible': _CorporateNumber('-221523729.79'),
+        'TotalFiscalAmortization': _CorporateNumber('0.0'),
+        'TotalCommercialAmortization': _CorporateNumber('0.0'),
+        'DiferencesAmortization': _CorporateNumber('0.0'),
+    })
+    value.update(overrides)
+    return value
+
+
+def test_live_cent_level_recap_projects_natively_instead_of_falling_back():
+    result = project(live_form())
+    assert [field['value'] for field in result['fields']] == [
+        '337.754.266,21', '559.277.996', '-221.523.729,79', '0', '0', '0']
+    rules = [entry['rule'] for entry in result['provenance']
+             if entry['path'][-1] in dict(module().L9_FIELDS)]
+    assert rules == ['nonmigrated-reconciled-recap/angular-cents-id',
+                     'nonmigrated-reconciled-recap/angular-integer-id',
+                     'nonmigrated-reconciled-recap/angular-cents-id',
+                     'nonmigrated-reconciled-recap/angular-integer-id',
+                     'nonmigrated-reconciled-recap/angular-integer-id',
+                     'nonmigrated-reconciled-recap/angular-integer-id']
+
+
+def test_a_sub_unit_residual_is_admitted_in_either_direction():
+    # 337754266.79 - 337754266 = +0.79 and 337754265.79 - 337754266 = -0.21.
+    for total, difference in (('337754266.79', '-221523729.21'),
+                              ('337754265.79', '-221523730.21')):
+        result = project(live_form(TotalFiscalDepreciationTangible=_CorporateNumber(total),
+                                   DiferencesDepreciationTangible=_CorporateNumber(difference)))
+        assert result['fields'][0]['value'] == _number(total, 2, locale='id-ID')
+
+
+@pytest.mark.parametrize('total,difference', [
+    ('337754267.0', '-221523729.0'),      # exactly one rupiah over the operand sum
+    ('337754265.0', '-221523731.0'),      # exactly one rupiah under it
+    ('337754267.21', '-221523728.79'),    # 1.21 over
+    ('337754266.0', '-221523729.79'),     # operands agree, difference is a cent short
+    ('337754266.22', '-221523729.79'),    # sub-unit residual, difference still short
+])
+def test_a_genuinely_unreconciled_total_still_refuses(total, difference):
+    with pytest.raises(_UnsupportedMetadata) as error:
+        project(live_form(TotalFiscalDepreciationTangible=_CorporateNumber(total),
+                          DiferencesDepreciationTangible=_CorporateNumber(difference)))
+    assert str(error.value) in ('unreconciled_corporate_l9_fiscal_depreciation',
+                                'unreconciled_corporate_l9_depreciation_difference')
+
+
+@pytest.mark.parametrize('value', [
+    _CorporateNumber('337754266.211'),   # finer than the template's cents grammar
+    _CorporateNumber('337754266.215'),
+    _CorporateNumber('999999999999999.99'),  # cents outside the 15-digit bound
+])
+def test_a_recap_total_finer_than_cents_refuses(value):
+    with pytest.raises(_UnsupportedMetadata) as error:
+        project(live_form(TotalFiscalDepreciationTangible=value))
+    assert str(error.value) == 'unsupported_corporate_l9_amount_precision'
+
+
+def test_a_fractional_reduction_operand_still_refuses():
+    # `Math.round` in the owner's getFormData makes every operand whole rupiah.
+    with pytest.raises(_UnsupportedMetadata) as error:
+        project(live_form(TotalTable1=_CorporateNumber('264166766.21'),
+                          TotalFiscalDepreciationTangible=_CorporateNumber('337754266.21')))
+    assert str(error.value) == 'unsupported_corporate_l9_amount_precision'
+
+
+def test_the_live_cent_level_recap_reaches_native_capture_end_to_end():
+    """The whole adapter must accept it, not fall back to the DOM path."""
+    form_value = corpus.current_form()
+    form_value['MainFormData']['IsMigrated'] = False
+    form_value['RecapitulationFiscalDepreciationAmortization'] = {
+        name: corpus.Number(str(value)) for name, value in live_form().items()}
+    body = [corpus.primary(form_value)]
+    for sequence, declaration in enumerate(grid_declarations(), start=2):
+        body.append(corpus.packet({'IsSuccessful': True,
+            'Payload': {'Data': [], 'TotalRecords': 0, 'Index': None}},
+            sequence, endpoint=declaration['endpoint'],
+            request=declaration['pages'][0]['request_json']))
+    for item in body:
+        item['context'].update(frame_url=ROUTE, component_lifetime=lifetime())
+    result = adapt_corporate_detail(iter(body), selected(), corpus.SCOPE, observed())
+    assert result['eligible'], result['reason']
+    section, = [item for item in result['sections'] if item['name'] == 'L9']
+    assert [field['value'] for field in section['fields']][0] == '337.754.266,21'
 
 
 @pytest.mark.parametrize('mutation,reason', [
