@@ -168,7 +168,13 @@ ENUMS = {
                        'handle_tab', 'handle_panel', 'unknown')} | {
         'history_bind_' + phase + '_state_' + phase + '_' + reason
         for phase in ('start', 'end')
-        for reason in ('eval', 'malformed', 'unavailable', 'incomplete')}),
+        for reason in ('eval', 'malformed', 'unavailable', 'incomplete')} | {
+        'history_bind_' + phase + '_state_' + phase + '_unavailable_' + why
+        for phase in ('start', 'end')
+        # Keep in sync with the value-free stop() codes emitted by _L10C_HISTORY
+        # in coretax_json_capture.py; the allowlist is hand-enumerated.
+        for why in ('budget', 'ancestors', 'target_disconnected', 'owner_chain',
+                    'controls', 'radio_inputs', 'current_controls', 'enabled')}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',

@@ -174,6 +174,28 @@ saat View diperiksa: `clear` (tidak ada root/host corporate di dokumen),
 bukan dokumen aktif), atau `unsupported`. Event ini tidak memuat elemen, atribut,
 URL, atau nilai, dan tidak mengubah admission.
 
+### Gate detail L10-C Corporate
+
+`corporate.l10c_detail_gate` mencatat `corporate_l10c_detail_gate` — kategori
+tetap yang menamai pemeriksaan pertama yang menolak proyeksi detail native
+L10-C: `history_capture_api`, `history_source_controls`,
+`history_grid_structure`, `history_lifetime`, `reference_catalogs`,
+`build_pins`, `build_digests`, `environment`, `table_metadata`, dan
+`references_or_lifetime`. Kegagalan penanganan handle dinamai
+`history_bind_<phase>_<reason>` (`lifetime_or_history`, `handle_form`,
+`handle_grid`, `handle_table`, `handle_tab`, `handle_panel`, `unknown`).
+Kegagalan state skrip riwayat dinamai
+`history_bind_<phase>_state_<phase>_<reason>` (`eval`, `malformed`,
+`unavailable`, `incomplete`); bila `state.available` menjadi false, alasan
+`stop()` skrip riwayat ikut dinamai sebagai `..._unavailable_<why>`, dengan
+`why` salah satu dari `budget`, `ancestors`, `target_disconnected`,
+`owner_chain`, `controls`, `radio_inputs`, `current_controls`, atau `enabled`.
+
+Alasan `why` berasal dari skrip `_L10C_HISTORY` di `coretax_json_capture.py`
+dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai DOM tidak
+pernah dicatat. Gate ini tidak melonggarkan aturan admission native JSON:
+penolakan tetap memilih DOM fallback dan tidak mengubah hasil workbook.
+
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
 Field `native_paginator_step` dibatasi ke `reset_probe`,
