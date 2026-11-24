@@ -1,4 +1,4 @@
-playwright==1.65.1
+playwright==1.65.2
 # The reviewed Playwright release requires pyee >=13,<15; Dependabot's
 # independent transitive update to pyee 15 breaks every CI environment.
 pyee==14.0.0
