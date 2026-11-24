@@ -126,10 +126,10 @@ def test_cursor_disposal_does_not_mask_stop_after_pagination(context, monkeypatc
     page.close()
 
 
-def test_cursor_deadline_is_not_reset_by_later_advance(context):
+def test_cursor_deadline_maps_host_budget_from_creation_and_is_ceiling_clamped(context):
     page = context.new_page()
     page.route('**/*', lambda route: route.abort())
-    table = fixture(page, total=601, selected=250)
+    table = fixture(page, total=1201, selected=250)
     owner = table.element_handle().evaluate_handle("e=>e.closest('p-table')")
     cursor = owner.evaluate_handle(driver.TABLE_CURSOR_INIT_JS)
     assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
@@ -139,10 +139,25 @@ def test_cursor_deadline_is_not_reset_by_later_advance(context):
     decoded = json.loads(snapshot['packed'])
     assert len(decoded['rows']) == 250
     assert decoded['rows'][0] == ['126', '0']
-    cursor.evaluate('c=>{c.deadline=performance.now()-1}')
+    # The host budget is mapped from cursor creation, never from dispatch time:
+    # a command queued for 120 ms cannot buy 120 ms of extra capture.
+    page.wait_for_timeout(120)
     assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
-                           {'remaining_ms': 100000, 'allow': True})['status'] == 'budget'
-    assert page.evaluate('moves') == 1
+                           {'remaining_ms': 10000, 'allow': True})['status'] == 'advanced'
+    offsets = cursor.evaluate('c=>({deadline:c.deadline,created:c.created})')
+    assert offsets['deadline'] - offsets['created'] <= 10000
+    assert isinstance(owner.evaluate(driver.TABLE_VERIFIED_JS, cursor)['packed'], str)
+    # A verified page may extend the host budget, but never past the ceiling.
+    assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                           {'remaining_ms': 10_000_000, 'ceiling_ms': 20000,
+                            'allow': True})['status'] == 'advanced'
+    offsets = cursor.evaluate('c=>({deadline:c.deadline,created:c.created})')
+    assert offsets['deadline'] - offsets['created'] <= 20000
+    assert isinstance(owner.evaluate(driver.TABLE_VERIFIED_JS, cursor)['packed'], str)
+    # An expired host budget still refuses the click.
+    assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                           {'remaining_ms': 0, 'allow': True})['status'] == 'budget'
+    assert page.evaluate('moves') == 3
     cursor.dispose()
     owner.dispose()
     page.close()
