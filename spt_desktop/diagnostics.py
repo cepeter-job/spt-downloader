@@ -174,7 +174,8 @@ ENUMS = {
         # Keep in sync with the value-free stop() codes emitted by _L10C_HISTORY
         # in coretax_json_capture.py; the allowlist is hand-enumerated.
         for why in ('budget', 'ancestors', 'target_disconnected', 'owner_chain',
-                    'controls', 'radio_inputs', 'current_controls', 'enabled')}),
+                    'controls', 'controls_years', 'controls_tins', 'controls_radios',
+                    'controls_business', 'radio_inputs', 'current_controls', 'enabled')}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',

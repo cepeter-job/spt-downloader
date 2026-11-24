@@ -234,7 +234,8 @@ def test_corporate_l10c_detail_gate_admits_each_state_unavailable_why(tmp_path):
     projection_incomplete blocker stays a black box."""
     d = diagnostics()
     whys = ('budget', 'ancestors', 'target_disconnected', 'owner_chain',
-            'controls', 'radio_inputs', 'current_controls', 'enabled')
+            'controls', 'controls_years', 'controls_tins', 'controls_radios',
+            'controls_business', 'radio_inputs', 'current_controls', 'enabled')
     values = ['history_bind_' + phase + '_state_' + phase + '_unavailable_' + why
               for phase in ('start', 'end') for why in whys]
     with d.session(tmp_path, 'worker') as log:

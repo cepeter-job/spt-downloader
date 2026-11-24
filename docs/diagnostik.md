@@ -189,7 +189,9 @@ Kegagalan state skrip riwayat dinamai
 `unavailable`, `incomplete`); bila `state.available` menjadi false, alasan
 `stop()` skrip riwayat ikut dinamai sebagai `..._unavailable_<why>`, dengan
 `why` salah satu dari `budget`, `ancestors`, `target_disconnected`,
-`owner_chain`, `controls`, `radio_inputs`, `current_controls`, atau `enabled`.
+`owner_chain`, `controls` (atau `controls_years`, `controls_tins`,
+`controls_radios`, `controls_business` untuk kontrol header yang gagal satu per
+satu), `radio_inputs`, `current_controls`, atau `enabled`.
 
 Alasan `why` berasal dari skrip `_L10C_HISTORY` di `coretax_json_capture.py`
 dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai DOM tidak
