@@ -90,9 +90,12 @@ def assert_live_projection(result, bodies):
     a, b = section['tables']
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
     assert b['headers'] == HEADERS[1] and b['footer_spans'] == SPANS[1]
-    expected = [[str(local + 1), 'SYNTHETIC DOMESTIC', '0000000000000002',
-                 'SYNTHETIC TAX', '5', '3', '000001', DATES[first][1]]
-                for first, count in ((0, 10), (10, 2)) for local in range(count)]
+    expected = []
+    for first, count in ((0, 10), (10, 2)):
+        for _ in range(count):
+            # NO. is the global position across pages, never a per-page restart.
+            expected.append([str(len(expected) + 1), 'SYNTHETIC DOMESTIC', '0000000000000002',
+                             'SYNTHETIC TAX', '5', '3', '000001', DATES[first][1]])
     assert all(len(row) == 8 for row in b['rows'][:12])
     assert b['rows'] == expected + FOOTERS and b['footer'] == FOOTERS
     assert b['source_total'] == 12 and b['complete'] is True

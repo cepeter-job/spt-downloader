@@ -211,7 +211,9 @@ def test_466_complete_pages_preserve_4654_duplicate_rows_without_summing_footer_
     body = result['tables'][1]
     assert body['source_total'] == body['body_row_count'] == 4654
     rows = body['rows'][:body['body_row_count']]
-    assert [value[0] for value in rows] == [str(index % 10 + 1) for index in range(4654)]
+    # NO. is global across all 466 pages (1..4654); the modulo form would
+    # renumber every page back to 1..10.
+    assert [value[0] for value in rows] == [str(index + 1) for index in range(4654)]
     assert all(value[1:] == rows[0][1:] for value in rows)
     assert rows[0][7] == '29-02-2024'
     assert body['footer'] == [['JUMLAH', '50', '40', ''],

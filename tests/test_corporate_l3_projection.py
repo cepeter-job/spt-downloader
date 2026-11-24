@@ -212,7 +212,9 @@ def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_foote
     assert a['footer_spans'] == SPANS[0]
     assert b['rows'][0] == ['1', 'SYNTHETIC DOMESTIC', '0000000000000002',
         'SYNTHETIC TAX', '5', '3', '000001', '01-12-2025']
-    assert [r[0] for r in b['rows'][:12]] == [str(i) for i in range(1, 11)] + ['1', '2']
+    # NO. must run continuously across pages (1..12), matching the DOM grid;
+    # a per-page restart would renumber the second page back to 1.
+    assert [r[0] for r in b['rows'][:12]] == [str(i) for i in range(1, 13)]
     assert b['footer'] == [['JUMLAH', '50', '40', ''],
         ['KREDIT PAJAK LUAR NEGERI', '', '1', ''], ['JUMLAH KREDIT PAJAK', '', '41', '']]
     assert b['footer_spans'] == SPANS[1]

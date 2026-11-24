@@ -124,7 +124,9 @@ def test_l3_original_packets_reach_final_saved_form_with_authoritative_footer_an
     assert [t['body_row_count'] for t in section['tables']] == [2, 12]
     assert section['tables'][1]['footer'] == [['JUMLAH', '50', '40', ''],
         ['KREDIT PAJAK LUAR NEGERI', '', '1', ''], ['JUMLAH KREDIT PAJAK', '', '41', '']]
-    assert [r[0] for r in section['tables'][1]['rows'][:12]] == [str(i) for i in range(1, 11)] + ['1', '2']
+    # NO. runs continuously across pages (1..12); a per-page restart would
+    # renumber the second page back to 1.
+    assert [r[0] for r in section['tables'][1]['rows'][:12]] == [str(i) for i in range(1, 13)]
     assert section['tables'][1]['rows'][0][2] == '0000000000000002'
     assert {f['field']: f['value'] for f in section['fields']} == {
         'OverseasRefundPreviousYear': '1', 'OverseasTotalCalculatedCurrentYear': '888'}

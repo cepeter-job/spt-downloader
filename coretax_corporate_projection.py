@@ -4281,7 +4281,10 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
             tax_type = row['TaxType']
             tax_type = (_L3_B_TAX_TYPE_BARE_LABELS.get(tax_type, tax_type)
                         if type(tax_type) is str else tax_type)
-            brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
+            # NO. is the global 1-based row position across all pages, matching
+            # the DOM grid. local_index restarts at 0 on every page, so it must
+            # never drive the displayed number.
+            brows.append([str(len(brows) + 1), text(row['Name']), text(row['TIN']),
                 label(tax_type, 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
                 text(row['WithholdingSlipsNumber']),
                 _l3_date(row['WithholdingSlipsDate'], domestic_jakarta_midnight=True)])
