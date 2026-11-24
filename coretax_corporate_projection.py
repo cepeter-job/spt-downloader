@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, DecimalException
+from decimal import Decimal, DecimalException, localcontext
 from fractions import Fraction
 import re
 
@@ -257,6 +257,12 @@ L2_AFFILIATE_HEADERS = ['NO.', 'NAMA', 'NEGARA', 'NPWP/NIK',
     'PIUTANG / NILAI (Rp)', 'PIUTANG / TAHUN', 'PIUTANG / BUNGA UTANG/TAHUN']
 L2_AFFILIATE_SPANS = [[1, 5, 1, 2, 1, 2]]
 _MAX_INTEGER = 999999999999999
+# L9 recap amounts are stored verbatim by the owner while the twelve reduction
+# operands are whole-rupiah `Math.round` results, so a recap total may carry at
+# most cents and may differ from its operand sum by a strictly sub-rupiah
+# fractional remainder. See `project_l9`.
+L9_CENTS = Decimal('0.01')
+L9_SUB_UNIT = Decimal(1)
 
 
 def _integer(value):
@@ -3182,14 +3188,54 @@ def project_l9_grid(*, index, pages, total, headers, footer_spans, tax_type,
         'provenance': provenance}
 
 
+def _l9_amount(value):
+    """Exact cents-bounded recap operand, or refuse.
+
+    The pinned owner stores the six recap controls verbatim but applies
+    `Math.round` to `TotalTable1..12`, so a recap total may carry cents while
+    every reduction operand is whole rupiah. Cents are the widest fraction the
+    approved template's own amount grammar accepts (`(?:,[0-9]{1,2})?`), so
+    anything finer is refused rather than rounded.
+    """
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_amount_type')
+    try:
+        number = _decimal(value)
+    except (DecimalException, _UnsupportedMetadata):
+        raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision') from None
+    # Signed-zero display has not been proved; never canonicalize it to 0.
+    if (abs(number) > _MAX_INTEGER or number.is_zero() and number.is_signed()
+            or number != number.quantize(L9_CENTS)):
+        raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision')
+    return number
+
+
+def _l9_fraction(number):
+    """Fraction digits actually carried by `number` (0..2), never rounded."""
+    with localcontext() as context:
+        context.prec = 40
+        exponent = number.normalize().as_tuple().exponent
+    return max(0, -exponent)
+
+
 def project_l9(form, *, tax_type, locale, migrated):
     """Six recap controls only, never permission to discard twelve detail grids.
 
     Non-migrated setFormData calls all twelve patchFooterGrid callbacks. Require
     that the captured values already equal that initialization's fixed point.
     Migrated initialization patches only the tangible difference, not both stored
-    differences, so that unproved branch stays unsupported. Integral operands
-    avoid Math.round/fraction/IEEE-754 guesses; null is not silently zero-filled.
+    differences, so that unproved branch stays unsupported. Null is not silently
+    zero-filled.
+
+    Amounts are exact cents-bounded decimals, never floats and never rounded.
+    The twelve reduction operands must be whole rupiah because the owner's
+    `getFormData` applies `Math.round` to `TotalTable1..12` only, while the six
+    recap controls keep their stored cents. A recap total may therefore differ
+    from its whole-rupiah operand sum by a strictly sub-rupiah fractional
+    remainder; that remainder is the only admissible discrepancy, so a total
+    that is off by a full rupiah or more still refuses as unreconciled. The two
+    difference controls are exact subtractions of two stored recap totals and
+    must match to the cent.
     """
     if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or migrated is not False
             or not isinstance(form, dict)):
@@ -3198,26 +3244,23 @@ def project_l9(form, *, tax_type, locale, migrated):
         raise _UnsupportedMetadata('unsupported_corporate_l9_source_shape')
     amounts = {}
     for name in (*L9_TABLE_TOTALS, *(field for field, _ in L9_FIELDS)):
-        value = form[name]
-        if type(value) is not _CorporateNumber:
-            raise _UnsupportedMetadata('unsupported_corporate_l9_amount_type')
-        try:
-            number = _decimal(value)
-        except (DecimalException, _UnsupportedMetadata):
-            raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision') from None
-        # Signed-zero display has not been proved; never canonicalize it to 0.
-        if (abs(number) > _MAX_INTEGER or number != number.to_integral_value()
-                or number.is_zero() and number.is_signed()):
+        number = _l9_amount(form[name])
+        # `Math.round` in the owner's getFormData makes every operand integral.
+        if name in L9_TABLE_TOTALS and number != number.to_integral_value():
             raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision')
         if name not in L9_SIGNED and number < 0:
             raise _UnsupportedMetadata('unsupported_corporate_l9_negative_amount')
-        amounts[name] = int(number)
-    # Nonnegative summands and a reconciled <=15-digit total also bound every
-    # ordered partial sum. All JS additions/subtractions are exact in this subset.
-    if amounts['TotalFiscalDepreciationTangible'] != sum(amounts[name] for name in L9_TABLE_TOTALS[:7]):
-        raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_depreciation')
-    if amounts['TotalFiscalAmortization'] != sum(amounts[name] for name in L9_TABLE_TOTALS[7:]):
-        raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_amortization')
+        amounts[name] = number
+    # Whole-rupiah operands bound every ordered partial sum, and the sub-rupiah
+    # remainder keeps the reported total within one rupiah of that exact sum.
+    for total, operands, reason in (
+            ('TotalFiscalDepreciationTangible', L9_TABLE_TOTALS[:7],
+             'unreconciled_corporate_l9_fiscal_depreciation'),
+            ('TotalFiscalAmortization', L9_TABLE_TOTALS[7:],
+             'unreconciled_corporate_l9_fiscal_amortization')):
+        residual = amounts[total] - sum((amounts[name] for name in operands), Decimal(0))
+        if abs(residual) >= L9_SUB_UNIT:
+            raise _UnsupportedMetadata(reason)
     if amounts['DiferencesDepreciationTangible'] != (
             amounts['TotalFiscalDepreciationTangible'] - amounts['TotalCommercialDepreciationTangible']):
         raise _UnsupportedMetadata('unreconciled_corporate_l9_depreciation_difference')
@@ -3226,10 +3269,12 @@ def project_l9(form, *, tax_type, locale, migrated):
         raise _UnsupportedMetadata('unreconciled_corporate_l9_amortization_difference')
     fields, provenance = [], []
     for name, caption in L9_FIELDS:
+        fraction = _l9_fraction(amounts[name])
         fields.append({'group': '', 'field': name, 'label': caption,
-                       'value': _number(form[name], 0, locale=locale)})
+                       'value': _number(form[name], fraction, locale=locale)})
         entry = _evidence(form[name], [L9_ROOT, name])
-        entry.update(rule='nonmigrated-reconciled-recap/angular-integer-id',
+        entry.update(rule=('nonmigrated-reconciled-recap/angular-integer-id' if fraction == 0
+                           else 'nonmigrated-reconciled-recap/angular-cents-id'),
                      destination={'form': 'L9', 'field': name})
         provenance.append(entry)
     for name in L9_TABLE_TOTALS:

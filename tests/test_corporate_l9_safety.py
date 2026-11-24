@@ -27,11 +27,24 @@ def apply(*, forms=None, root=None, payload=None, event=None):
     (10000000, 'unsupported_corporate_l9_amount_type'),
     (10000000.0, 'unsupported_corporate_l9_amount_type'),
     (_CorporateNumber('-0'), 'unsupported_corporate_l9_amount_precision'),
+    (_CorporateNumber('-0.00'), 'unsupported_corporate_l9_amount_precision'),
     (_CorporateNumber('1000000000000000'), 'unsupported_corporate_l9_amount_precision'),
+    (_CorporateNumber('999999999999999.99'), 'unsupported_corporate_l9_amount_precision'),
     (_CorporateNumber('1e999999999999999999'), 'unsupported_corporate_l9_amount_precision')])
 def test_null_numbers_and_unsafe_precision_never_get_coerced(value, reason):
     with pytest.raises(_UnsupportedMetadata, match='^' + reason + '$'):
         project(form(TotalTable1=value))
+
+
+@pytest.mark.parametrize('value,reason', [
+    (_CorporateNumber('-0.00'), 'unsupported_corporate_l9_amount_precision'),
+    (_CorporateNumber('-0.01'), 'unsupported_corporate_l9_negative_amount'),
+    (_CorporateNumber('0.001'), 'unsupported_corporate_l9_amount_precision')])
+def test_a_fractional_recap_total_keeps_every_original_refusal(value, reason):
+    """Cents are admitted; signed zero, negatives and finer fractions are not."""
+    with pytest.raises(_UnsupportedMetadata, match='^' + reason + '$'):
+        project(form(TotalFiscalDepreciationTangible=value,
+                     DiferencesDepreciationTangible=_CorporateNumber('0')))
 
 
 def test_fifteen_digit_boundary_and_exact_exponent_tokens():
