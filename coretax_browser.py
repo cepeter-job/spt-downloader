@@ -386,13 +386,14 @@ TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
  const next=owner.querySelector('.p-paginator-next:not([disabled]):not(.p-disabled)');
  if(!next) return {status:'done'};
  if(!options.allow) return {status:'page_limit'};
- if(cursor.deadline===null){
-   if(!Number.isFinite(options.remaining_ms) || options.remaining_ms<=0)
-     return {status:'budget'};
-   // Creation precedes the response and Python's remaining-budget sample:
-   // a queued command can only shorten this deadline, never extend it.
-   cursor.deadline=cursor.created+Math.min(options.remaining_ms,180000);
- }
+ if(!Number.isFinite(options.remaining_ms) || options.remaining_ms<=0)
+   return {status:'budget'};
+ // The host table deadline is authoritative. It is re-derived from cursor
+ // creation on every dispatch and clamped to the hard ceiling, so a verified
+ // page may extend it while a queued command can never extend it further:
+ // the mapping is absolute from creation, never from dispatch time.
+ cursor.deadline=cursor.created+Math.min(options.remaining_ms,
+   Number.isFinite(options.ceiling_ms)?options.ceiling_ms:180000);
  if(performance.now()>=cursor.deadline) return {status:'budget'};
  const state=(READ_STATE)(owner);
  if(cursor.pending!==null || cursor.seen.has(state))
@@ -605,6 +606,14 @@ def _click_table_paginator(control, container, check_cancel):
 
 
 TABLE_CAPTURE_BUDGET_SECONDS = 180
+# A verified page earns the next page's bounded allowance. A flat per-table
+# budget silently truncated legitimately large grids (live: 60+ server-bound
+# pages at ~20 s each), so the host deadline scales with proven progress
+# instead of page count. A stalled page earns nothing and still expires.
+TABLE_CAPTURE_PAGE_BUDGET_SECONDS = 60
+# Hard ceiling per table: the rolling allowance can never extend past this, so
+# an unbounded grid still terminates and still fails loudly as PARTIAL.
+TABLE_CAPTURE_MAX_SECONDS = 1800
 
 _INITIAL_FORM_ORDINAL = ContextVar('spt_initial_loading_form_ordinal', default=1)
 class _InitialLoadingDiagnostics:
@@ -895,7 +904,9 @@ def _dispose_table_handle(handle):
 
 def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
     _check_cancel(check_cancel)
-    capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
+    capture_started = time.monotonic()
+    capture_deadline = capture_started + TABLE_CAPTURE_BUDGET_SECONDS
+    capture_ceiling = capture_started + TABLE_CAPTURE_MAX_SECONDS
     passive_rpc_slots = [0]
     host_cpu_slots = {}
     preparation_started = _diagnostic_clock()
@@ -1086,8 +1097,13 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
     cursor = None
+    # Only meaningful when a cursor exists; set immediately before creation.
+    cursor_started = 0.0
     if max_page_size >= 250:
         _check_cancel(check_cancel)
+        # Host clock at cursor creation: the renderer deadline is mapped from
+        # this instant, never from a later dispatch time.
+        cursor_started = time.monotonic()
         with _timed_existing_rpc('cursor_init', ordinal, max_page_size,
                                  passive_rpc_slots):
             cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
@@ -1098,7 +1114,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         embedded_snapshot = None
         if cursor is not None:
             page_started = _diagnostic_clock()
-            remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
+            # Host budget measured from cursor creation, not from this dispatch:
+            # a queued command can only shorten the renderer deadline.
+            remaining_ms = max(0.0, (capture_deadline - cursor_started) * 1000)
             # L3-B's 500-row candidate pays ~15s wall time per browser RPC
             # in operator logs even when renderer work is <250ms. Try to
             # capture an already-updated page in the same owner-bound call.
@@ -1109,7 +1127,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                                      passive_rpc_slots, host_cpu_slots) as timing:
                 advance = cursor.evaluate(
                     TABLE_CURSOR_TURN_JS if use_turn else TABLE_CURSOR_ADVANCE_JS,
-                    {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+                    {'remaining_ms': remaining_ms,
+                     'ceiling_ms': TABLE_CAPTURE_MAX_SECONDS * 1000,
+                     'allow': result['pages'] < max_pages})
                 if timing is not None and type(advance) is dict:
                     timing['renderer_ms'] = advance.get(
                         'turn_renderer_ms' if use_turn else 'renderer_ms')
@@ -1355,6 +1375,16 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         result['footer'] = data.get('footer', [])
         result['footer_spans'] = data.get('footer_spans', [])
         result['pages'] += 1
+        # A verified page earns the next page's bounded allowance. The host
+        # deadline therefore scales with proven progress instead of truncating
+        # a legitimately large grid at a flat per-table budget. It never
+        # shortens, never passes the hard ceiling, and a stalled page (no
+        # verified page) earns nothing and still expires loudly.
+        if result['complete']:
+            capture_deadline = min(
+                capture_ceiling,
+                max(capture_deadline,
+                    time.monotonic() + TABLE_CAPTURE_PAGE_BUDGET_SECONDS))
         if result['complete']:
             diagnostics.record('table.page_timing', table_page_stage='advanced',
                                pages=result['pages'], page_rows=len(data['rows']),

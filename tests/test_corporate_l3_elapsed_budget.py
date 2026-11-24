@@ -1,0 +1,124 @@
+"""Large-grid elapsed-budget scaling: synthetic Edge UI only, no live access.
+
+The flat 180 s per-table budget truncated legitimately large L3 grids (live:
+60+ server-bound pages at ~20 s each) as PARTIAL with
+'Table capture elapsed budget exceeded'. Per-page browser cost is already one
+fused owner-bound RPC and is dominated by the server grid fetch, so the host
+budget now scales with verified progress and still stops at a hard ceiling.
+"""
+import pytest
+
+import coretax_browser as driver
+from spt_desktop import diagnostics as d
+from support_isolated_browser import browser as browser, context as context
+from test_corporate_dom_page_size import fixture
+from test_diagnostics import records
+
+
+PAGES = 12
+SIZE = 500
+SERVER_MS = 120
+
+
+def slow_pages(page, pages=PAGES):
+    """Make every Next click behave like a server-bound grid fetch."""
+    page.evaluate('''ms => {
+        const next=document.querySelector('.p-paginator-next');
+        const draw=window.draw;
+        next.onclick=()=>{
+            moves++;
+            const overlay=document.createElement('div');
+            overlay.className='p-datatable-loading-overlay';
+            overlay.style.cssText='position:absolute;inset:0;width:40px;height:40px';
+            document.querySelector('.p-datatable').append(overlay);
+            setTimeout(()=>{at++;draw();overlay.remove();}, ms);
+        };
+    }''', SERVER_MS)
+
+
+@pytest.fixture
+def page(context):
+    owned = context.new_page()
+    owned.route('**/*', lambda route: route.abort())
+    owned.set_default_timeout(5000)
+    return owned
+
+
+def test_large_multi_page_capture_is_not_truncated_by_the_flat_base_budget(
+        page, monkeypatch, tmp_path):
+    total = PAGES * SIZE
+    table = fixture(page, total=total, selected=SIZE)
+    slow_pages(page)
+    # A base budget far below the total server-bound page time. Only verified
+    # progress may extend it; the pre-fix flat budget stopped after ~2 pages.
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0.6)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 0.5)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 120)
+
+    with d.session(tmp_path / 'log', 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=SIZE)
+        assert log.flush()
+
+    assert captured['complete'], captured.get('warning')
+    assert captured['pages'] == PAGES
+    assert captured['body_row_count'] == total
+    assert page.evaluate('moves') == PAGES - 1
+    events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
+    assert events == []
+
+
+def test_large_capture_still_stops_at_the_hard_ceiling(page, monkeypatch, tmp_path):
+    total = PAGES * SIZE
+    table = fixture(page, total=total, selected=SIZE)
+    slow_pages(page)
+    # Progress may extend the budget, but never past the ceiling.
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 30)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 30)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 0.5)
+
+    with d.session(tmp_path / 'log', 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=SIZE)
+        assert log.flush()
+
+    assert captured['complete'] is False
+    assert captured['warning'] == 'Table capture elapsed budget exceeded'
+    assert 1 <= captured['pages'] < PAGES
+    # Only verified pages are retained; nothing is invented and the click that
+    # was in flight at the ceiling is never retried.
+    assert captured['body_row_count'] == captured['pages'] * SIZE
+    assert page.evaluate('moves') <= captured['pages']
+    events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
+    assert len(events) == 1
+    assert events[0]['table_elapsed_stage'] in (
+        'before_next_click', 'state_poll', 'before_dom_read')
+    assert events[0]['pages'] == captured['pages']
+
+
+def test_stalled_page_mid_grid_still_fails_loudly_without_extra_click(
+        page, monkeypatch, tmp_path):
+    total = PAGES * SIZE
+    table = fixture(page, total=total, selected=SIZE)
+    slow_pages(page)
+    # Page 3 of the grid never advances again.
+    page.evaluate('''() => {
+        const next=document.querySelector('.p-paginator-next');
+        const slow=next.onclick;
+        let clicks=0;
+        next.onclick=()=>{if(++clicks>=3){moves++;return;} slow();};
+    }''')
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 2)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 0.4)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 120)
+
+    with d.session(tmp_path / 'log', 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=SIZE)
+        assert log.flush()
+
+    assert captured['complete'] is False
+    assert captured['warning'] == 'Table capture elapsed budget exceeded'
+    assert captured['pages'] == 3
+    assert captured['body_row_count'] == 3 * SIZE
+    assert page.evaluate('moves') == 3, 'A stalled page is never retried'
+    events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
+    assert len(events) == 1
+    assert events[0]['table_elapsed_stage'] == 'state_poll'

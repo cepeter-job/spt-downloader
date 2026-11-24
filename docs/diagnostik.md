@@ -768,17 +768,25 @@ permintaan layout browser pada tiap polling, tetapi **tidak** mengubah
 `TABLE_JS` sebagai sumber nilai tabel, klik paginator, deadline,
 atau aturan PARTIAL; efektivitas di Coretax masih perlu pengujian nyata.
 
-Capture DOM dengan paginator sekarang memiliki **batas elapsed 180 detik per
-satu tabel** (bukan per keseluruhan return). Sebelum setiap klik halaman berikutnya,
+Capture DOM dengan paginator memiliki **batas elapsed dasar 180 detik per
+satu tabel** (bukan per keseluruhan return). Setiap halaman yang **terverifikasi**
+menambah kelonggaran bergulir `TABLE_CAPTURE_PAGE_BUDGET_SECONDS` (60 detik)
+untuk halaman berikutnya, sehingga grid besar yang sah tidak terpotong oleh
+anggaran datar; total tetap dibatasi plafon keras
+`TABLE_CAPTURE_MAX_SECONDS` (1800 detik) per tabel. Halaman yang macet tidak
+menambah kelonggaran apa pun. Sebelum setiap klik halaman berikutnya,
 Stop diprioritaskan lalu batas elapsed diperiksa. Saat habis, tabel menjadi
 `PARTIAL` dengan alasan tetap `Table capture elapsed budget exceeded`, data
 yang sudah diamati tidak disertifikasi lengkap, dan tidak ada klik pagination
 berikutnya. Satu operasi browser yang sedang berlangsung masih tunduk pada
-timeout lama hingga selesai; angka ini bukan hard interrupt 180 detik ataupun
-izin retry klik yang tidak pasti. Pada saat batas terlampaui,
-event `table.elapsed_budget` mengirim enum
-`table_elapsed_stage=before_next_click` atau `state_poll` serta
-jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
+timeout lama hingga selesai; angka ini bukan hard interrupt ataupun
+izin retry klik yang tidak pasti. Deadline renderer pada cursor diturunkan
+ulang dari deadline host pada setiap dispatch (dipetakan dari waktu pembuatan
+cursor, bukan waktu dispatch) dan dijepit ke plafon keras, sehingga perintah
+yang tertunda di antrean tidak dapat memperpanjang capture. Pada saat batas
+terlampaui, event `table.elapsed_budget` mengirim enum
+`table_elapsed_stage=before_next_click`, `state_poll`, atau `before_dom_read`
+serta jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
 klik, tidak memulihkan data yang hilang, dan belum membuktikan penyebab
 waktu lambat. Pembacaan teks sel tabel menggunakan traversal text node
 tanpa clone/mutasi DOM dan mempertahankan kontrak pembersihan teks yang
