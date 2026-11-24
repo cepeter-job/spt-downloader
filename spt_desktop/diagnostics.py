@@ -174,8 +174,13 @@ ENUMS = {
         # Keep in sync with the value-free stop() codes emitted by _L10C_HISTORY
         # in coretax_json_capture.py; the allowlist is hand-enumerated.
         for why in ('budget', 'ancestors', 'target_disconnected', 'owner_chain',
+                    # Bare 'controls' is retained only so logs produced before the
+                    # per-predicate split stay readable; the JS no longer emits it.
                     'controls', 'controls_years', 'controls_tins', 'controls_radios',
-                    'controls_business', 'radio_inputs', 'current_controls', 'enabled')}),
+                    'controls_business', 'radio_inputs', 'current_controls', 'enabled')} | {
+        # JS clamps the observed count to 20; the ceiling is part of the contract.
+        'history_bind_' + phase + '_state_' + phase + '_unavailable_controls_business_' + str(count)
+        for phase in ('start', 'end') for count in range(0, 21)}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',

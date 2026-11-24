@@ -436,12 +436,17 @@ _L10C_HISTORY = """(d) => {
    const years=form.querySelectorAll('input[formcontrolname="PeriodYear"]');
    const tins=form.querySelectorAll('input[formcontrolname="CollectorTin"]');
    const radios=form.querySelectorAll('p-radiobutton[formcontrolname="Question"]');
-   const businessInputs=[...form.querySelectorAll('input')].filter(node=>!(roles[4].contains(node)&&
-     node.closest('p-paginator')&&node.closest('p-table')===roles[5]));
+   // Business controls are the form shell's inputs. Everything inside the
+   // grid's ui-grid-offline (offline search box, row inputs, paginator) is
+   // grid furniture, not an L10-C form control. Grid-root inputs stay counted
+   // so an injected sibling is still rejected.
+   const businessInputs=[...form.querySelectorAll('input')].filter(node=>!roles[4].contains(node));
    if(years.length!==1){stop('controls_years');return false;}
    if(tins.length!==1){stop('controls_tins');return false;}
    if(radios.length!==2){stop('controls_radios');return false;}
-   if(businessInputs.length!==4){stop('controls_business');return false;}
+   // Clamp so a count above the allowlist ceiling still reports a reason
+   // instead of being discarded and going silent again.
+   if(businessInputs.length!==4){stop('controls_business_' + Math.min(businessInputs.length, 20));return false;}
    const inputs=[...radios].map(radio=>radio.querySelectorAll('input[type="radio"]'));
    if(inputs.some(nodes=>nodes.length!==1)){stop('radio_inputs');return false;}
    const current=[years[0],tins[0],...radios,...inputs.map(nodes=>nodes[0])];
