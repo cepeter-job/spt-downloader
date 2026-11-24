@@ -299,14 +299,14 @@ Instalasi runtime/test/build memakai `uv pip sync --require-hashes --only-binary
 
 Actions dipin dengan commit SHA penuh. Checkout tidak menyimpan kredensial Git. Job tes/build memakai token baca. Job `attest` pada push `main` mendapat `id-token: write` dan `attestations: write`; job `cleanup` sesudah gate mendapat `contents: write` serta akses baca PR. Secret penandatanganan penerbit tidak tersedia pada run PR.
 
-Bootstrap `setup-uv` juga memeriksa SHA-256 arsip upstream **uv 0.13.7** yang
+Bootstrap `setup-uv` juga memeriksa SHA-256 arsip upstream **uv 0.13.9** yang
 ditinjau, selain pin action dan versi. Nilai berasal dari
-[release upstream](https://github.com/astral-sh/uv/releases/tag/0.13.7):
+[release upstream](https://github.com/astral-sh/uv/releases/tag/0.13.9):
 
 | Runner | Arsip | SHA-256 |
 | --- | --- | --- |
-| Ubuntu x64 | `uv-x86_64-unknown-linux-gnu.tar.gz` | `c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83` |
-| Windows x64 | `uv-x86_64-pc-windows-msvc.zip` | `0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021` |
+| Ubuntu x64 | `uv-x86_64-unknown-linux-gnu.tar.gz` | `a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5` |
+| Windows x64 | `uv-x86_64-pc-windows-msvc.zip` | `edd61f7f5728a56cc62455386661860bdfc7bab65872f39b0c25bdcc1d8e1beb` |
 
 Pembaruan uv harus meninjau versi dan kedua digest bersama. Binary uv yang dibundel
 tetap berasal dari paket build yang terkunci dengan hash dan diperiksa versinya.
