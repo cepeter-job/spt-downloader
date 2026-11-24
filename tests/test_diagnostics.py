@@ -238,6 +238,8 @@ def test_corporate_l10c_detail_gate_admits_each_state_unavailable_why(tmp_path):
             'controls_business', 'radio_inputs', 'current_controls', 'enabled')
     values = ['history_bind_' + phase + '_state_' + phase + '_unavailable_' + why
               for phase in ('start', 'end') for why in whys]
+    values += ['history_bind_' + phase + '_state_' + phase + '_unavailable_controls_business_' + str(count)
+               for phase in ('start', 'end') for count in (0, 3, 5, 7, 20)]
     with d.session(tmp_path, 'worker') as log:
         for value in values:
             d.record('corporate.l10c_detail_gate', corporate_l10c_detail_gate=value)
