@@ -610,7 +610,10 @@ TABLE_CAPTURE_BUDGET_SECONDS = 180
 # budget silently truncated legitimately large grids (live: 60+ server-bound
 # pages at ~20 s each), so the host deadline scales with proven progress
 # instead of page count. A stalled page earns nothing and still expires.
-TABLE_CAPTURE_PAGE_BUDGET_SECONDS = 60
+# Live worst case measured on a 500-row L3 page: 34 s click + 29 s DOM read =
+# 62.7 s, which overran the previous 60 s allowance by 2.7 s. Keep at least 2x
+# headroom over that so a slow-but-progressing page is never cut off.
+TABLE_CAPTURE_PAGE_BUDGET_SECONDS = 120
 # Hard ceiling per table: the rolling allowance can never extend past this, so
 # an unbounded grid still terminates and still fails loudly as PARTIAL.
 TABLE_CAPTURE_MAX_SECONDS = 1800
