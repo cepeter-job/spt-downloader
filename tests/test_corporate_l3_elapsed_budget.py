@@ -122,3 +122,17 @@ def test_stalled_page_mid_grid_still_fails_loudly_without_extra_click(
     events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
     assert len(events) == 1
     assert events[0]['table_elapsed_stage'] == 'state_poll'
+
+
+def test_default_page_allowance_has_headroom_over_measured_live_page_cost():
+    """The rolling allowance must exceed a real slow page, not just a fast one.
+
+    Live measurement on a 500-row L3 page (build 2037771): 34.0 s click +
+    28.7 s DOM read = 62.7 s. The previous 60 s allowance cut that page off by
+    2.7 s and aborted the whole table. Guard the constant against regressing
+    back under the observed cost.
+    """
+    MEASURED_LIVE_PAGE_SECONDS = 62.7
+    assert driver.TABLE_CAPTURE_PAGE_BUDGET_SECONDS >= MEASURED_LIVE_PAGE_SECONDS * 1.5, (
+        'per-page allowance must keep headroom over the measured live page cost')
+    assert driver.TABLE_CAPTURE_PAGE_BUDGET_SECONDS < driver.TABLE_CAPTURE_MAX_SECONDS
