@@ -36,7 +36,7 @@ def export_fixture(*, partial=False):
 
 @pytest.mark.parametrize('status', ['COMPLETE', 'PARTIAL'])
 def test_collect_details_passes_selected_record_folder_and_persists_pdf_metadata(tmp_path, monkeypatch, status):
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     monkeypatch.setattr(protocol, 'META', {**protocol.META, 'Jenis Pajak': 'PPh Badan'})
     run = protocol.run_fixture()
     record = run['records'][0]
@@ -160,7 +160,7 @@ def test_same_pdf_path_cannot_belong_to_two_selected_return_records(tmp_path):
 
 @pytest.mark.parametrize('legacy_attachments', ['missing', 'empty'])
 def test_live_resume_reinspects_legacy_corporate_checkpoint_without_pdf_evidence(tmp_path, monkeypatch, legacy_attachments):
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     monkeypatch.setattr(protocol, 'META', {**protocol.META, 'Jenis Pajak': 'PPh Badan'})
     run = protocol.run_fixture()
     record = run['records'][0]

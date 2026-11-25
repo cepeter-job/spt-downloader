@@ -22,7 +22,7 @@ class MissingListPage(SourcePage):
 @pytest.fixture
 def collector(monkeypatch):
     captured = []
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     original = driver.ListObserver.wait
 
     def immediate(self, after, timeout=45):

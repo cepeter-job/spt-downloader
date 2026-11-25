@@ -19,7 +19,7 @@ from support_browser_protocol import (
 @pytest.fixture(autouse=True)
 def no_browser_wait(monkeypatch):
     # The protocol fixtures have no rendering or loading overlays.
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
 
 
 @pytest.mark.parametrize('url', [
@@ -73,7 +73,7 @@ def test_observer_releases_previous_batches():
 def test_observer_returns_the_response_that_finished_during_ui_settling(monkeypatch):
     observer = driver.ListObserver(SignalSource())
     observer.on_response(response([{'RecordId': 'fixture-before-render'}]))
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: observer.on_response(response()))
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: observer.on_response(response()))
     assert observer.wait(0)['rows'] == [{'RecordId': RECORD}]
 
 

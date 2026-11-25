@@ -44,7 +44,7 @@ class FakeFirstWaitPage:
 def expected_calls(fail):
     calls = [
         ('locator', '.p-datatable-loading-overlay:visible,.p-blockui:visible'),
-        ('wait_for', 'hidden', 45000),
+        ('wait_for', 'hidden', browser.TABLE_OVERLAY_TIMEOUT_MS),
     ]
     if not fail:
         calls.append(('wait_for_timeout', 180))
@@ -58,7 +58,7 @@ def test_first_idle_local_timing_preserves_original_calls_and_timeout(
     original = FakeFirstWaitPage(fail=fail)
     with pytest.raises(browser.PlaywrightTimeoutError) if fail else nullcontext():
         # Caller is uninstrumented by default.
-        browser.wait_idle(original)
+        browser.wait_idle(original, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
     assert original.calls == expected_calls(fail)
 
     with d.session(tmp_path, 'worker') as log:
@@ -67,7 +67,7 @@ def test_first_idle_local_timing_preserves_original_calls_and_timeout(
         token = browser._FIRST_PAGE_TIMING_SCOPE.set((3, 500, observer))
         try:
             with pytest.raises(browser.PlaywrightTimeoutError) if fail else nullcontext():
-                browser.wait_idle(page)
+                browser.wait_idle(page, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         finally:
             browser._FIRST_PAGE_TIMING_SCOPE.reset(token)
             observer.close()
@@ -93,7 +93,7 @@ def test_first_idle_not_logged_when_session_disabled(tmp_path):
         observer.stage = 'first_idle'
         token = browser._FIRST_PAGE_TIMING_SCOPE.set((3, 500, observer))
         try:
-            browser.wait_idle(page)
+            browser.wait_idle(page, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         finally:
             browser._FIRST_PAGE_TIMING_SCOPE.reset(token)
             observer.close()
@@ -108,14 +108,14 @@ def test_first_idle_diagnostic_is_scoped_and_fails_closed(tmp_path):
         observer.stage = 'first_idle'
         token = browser._FIRST_PAGE_TIMING_SCOPE.set((3, 500, observer))
         try:
-            browser.wait_idle(page)
+            browser.wait_idle(page, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         finally:
             browser._FIRST_PAGE_TIMING_SCOPE.reset(token)
             observer.close()
         assert log.flush()
         # The context is guaranteed to reset before an unrelated wait.
         fresh = FakeFirstWaitPage()
-        browser.wait_idle(fresh)
+        browser.wait_idle(fresh, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         assert log.flush()
     assert fresh.calls == expected_calls(False)
     assert [r['table_first_page_step'] for r in records(tmp_path)
@@ -137,7 +137,7 @@ def test_first_idle_preserves_stop_without_sending_settle_call(tmp_path):
         token = browser._FIRST_PAGE_TIMING_SCOPE.set((3, 500, observer))
         try:
             with pytest.raises(browser.CaptureCancelled):
-                browser.wait_idle(page)
+                browser.wait_idle(page, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         finally:
             browser._FIRST_PAGE_TIMING_SCOPE.reset(token)
             observer.close()
@@ -157,7 +157,7 @@ def test_small_table_scope_never_emits_first_page_diagnostic(tmp_path):
         observer = browser._InitialLoadingDiagnostics(page, 1)
         token = browser._FIRST_PAGE_TIMING_SCOPE.set((1, 100, observer))
         try:
-            browser.wait_idle(page)
+            browser.wait_idle(page, timeout_ms=browser.TABLE_OVERLAY_TIMEOUT_MS)
         finally:
             browser._FIRST_PAGE_TIMING_SCOPE.reset(token)
             observer.close()

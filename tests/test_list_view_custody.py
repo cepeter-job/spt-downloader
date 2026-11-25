@@ -200,7 +200,7 @@ def deferred_page(monkeypatch, outcome):
 
     page = DeferredPage()
     monkeypatch.setattr(driver.time, 'monotonic', lambda: page.elapsed)
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     return page
 
 

@@ -163,3 +163,40 @@ def test_slow_page_earns_twice_its_measured_duration(page, monkeypatch, tmp_path
     assert captured['body_row_count'] == total
     events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
     assert events == [], 'adaptive allowance should have covered every page'
+
+
+def test_overlay_readiness_timeout_has_headroom_over_the_measured_wait():
+    """The loading-overlay wait must survive a slow server-bound grid.
+
+    Live L3 table 3 held its overlay past the old hardcoded 45 s and aborted
+    the whole panel as capture_timeout. The overlay is still the authoritative
+    readiness signal, so the cap must sit well above the observed wait rather
+    than being tuned for fast tables.
+    """
+    MEASURED_OVERLAY_WAIT_SECONDS = 60.7
+    assert driver.TABLE_OVERLAY_TIMEOUT_MS >= MEASURED_OVERLAY_WAIT_SECONDS * 1000 * 1.5, (
+        'overlay readiness timeout must keep headroom over the measured wait')
+
+
+def test_cursor_path_overlay_budget_is_threaded_not_hardcoded():
+    """The bundled large-table path must use the same overlay budget.
+
+    wait_idle() only runs on the legacy path (cursor is None). The cursor path
+    waits inside TABLE_VERIFIED_JS, whose idleDeadline used to be a hardcoded
+    performance.now()+45000 -- so raising the Python constant alone left a
+    60.7 s overlay still aborting at 45 s on the path the live run actually
+    took. The JS must read the budget threaded from TABLE_OVERLAY_TIMEOUT_MS.
+    """
+    verified = driver.TABLE_VERIFIED_JS
+    advance = driver.TABLE_CURSOR_ADVANCE_JS
+    assert 'cursor.overlayMs' in verified, 'cursor path must read the threaded budget'
+    assert 'performance.now()+45000' not in verified, 'cursor path still hardcodes 45 s'
+    assert 'options.overlay_ms' in advance, 'advance must record the host overlay budget'
+    # The fallback must be the host constant, not a second literal, and the
+    # placeholder must actually have been substituted at import time.
+    fallback = str(driver.TABLE_OVERLAY_TIMEOUT_MS)
+    assert 'OVERLAY_MS_FALLBACK' not in verified, 'placeholder left unsubstituted'
+    assert 'OVERLAY_MS_FALLBACK' not in advance, 'placeholder left unsubstituted'
+    assert fallback in verified and fallback in advance, (
+        'JS fallback must derive from TABLE_OVERLAY_TIMEOUT_MS')
+    assert '45000' not in advance, 'advance still carries the retired 45 s cap'

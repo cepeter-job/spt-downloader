@@ -84,7 +84,7 @@ class Scenario:
             self.record['meta']['Masa Pajak'] = 'Januari 2025'
             self.record['source_fields'].update(TaxTypeCode='SYNTHETIC UNKNOWN MASA CODE', TaxPeriodCode='01012025')
         monkeypatch.setattr(protocol, 'META', dict(self.record['meta']))
-        monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+        monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
         self.page = HybridSource(mode)
         self.page.rows = [deepcopy(self.record['source_fields'])]
         self.page.exchanges = [{'raw': corpus.primary()['body'] if raw is None else raw,
