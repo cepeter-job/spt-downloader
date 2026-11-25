@@ -103,11 +103,13 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
     loading_waits = []
 
     def controlled_loading_timeout(locator, *args, **kwargs):
-        # Keep real wait_idle and the inspected click; avoid a 45-second sleep.
-        # The overlay becomes visible only after First, and hides with Induk
-        # when later-panel recovery runs. No size or request race is modelled.
+        # Keep real wait_idle and the inspected click; avoid the real overlay
+        # sleep. The overlay becomes visible only after First, and hides with
+        # Induk when later-panel recovery runs. No size or request race is
+        # modelled. Match the module constant, never a hardcoded literal, so a
+        # retuned readiness budget cannot silently skip this path.
         if (locator.page is page and kwargs.get('state') == 'hidden'
-                and kwargs.get('timeout') == 45000
+                and kwargs.get('timeout') == driver.TABLE_OVERLAY_TIMEOUT_MS
                 and page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').count()):
             loading_waits.append(page.evaluate('window.syntheticFirstClicks'))
             raise timeout

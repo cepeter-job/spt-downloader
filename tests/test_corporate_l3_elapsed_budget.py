@@ -163,3 +163,16 @@ def test_slow_page_earns_twice_its_measured_duration(page, monkeypatch, tmp_path
     assert captured['body_row_count'] == total
     events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
     assert events == [], 'adaptive allowance should have covered every page'
+
+
+def test_overlay_readiness_timeout_has_headroom_over_the_measured_wait():
+    """The loading-overlay wait must survive a slow server-bound grid.
+
+    Live L3 table 3 held its overlay past the old hardcoded 45 s and aborted
+    the whole panel as capture_timeout. The overlay is still the authoritative
+    readiness signal, so the cap must sit well above the observed wait rather
+    than being tuned for fast tables.
+    """
+    MEASURED_OVERLAY_WAIT_SECONDS = 60.7
+    assert driver.TABLE_OVERLAY_TIMEOUT_MS >= MEASURED_OVERLAY_WAIT_SECONDS * 1000 * 1.5, (
+        'overlay readiness timeout must keep headroom over the measured wait')

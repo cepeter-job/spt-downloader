@@ -559,11 +559,22 @@ def _timed_first_page_operation(stage, ordinal, max_page_size, observer=None):
             pass  # No control-flow or result authority in this recorder.
 
 
+# Readiness wait for the table loading overlay. Live L3 table 3 held its
+# overlay past the old hardcoded 45 s and aborted the panel as capture_timeout;
+# a slow server-bound grid is not a stall, so allow the same order of headroom
+# as the page budget.
+TABLE_OVERLAY_TIMEOUT_MS = 120000
+
+
 def wait_idle(page):
     scope = _FIRST_PAGE_TIMING_SCOPE.get()
     with (_timed_first_page_operation('first_overlay_wait', *scope)
           if scope is not None else nullcontext()):
-        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
+        # Live L3 table 3 kept its loading overlay up past the old 45 s cap and
+        # aborted the whole panel as capture_timeout. A slow server-bound grid
+        # is not a stall: the overlay is still the authoritative readiness
+        # signal, so give it the same order of headroom as the page budget.
+        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=TABLE_OVERLAY_TIMEOUT_MS)
     with (_timed_first_page_operation('first_settle_wait', *scope)
           if scope is not None else nullcontext()):
         page.wait_for_timeout(180)
