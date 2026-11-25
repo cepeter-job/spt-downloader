@@ -378,6 +378,16 @@ TABLE_CURSOR_OWNER_JS = r'''cursor => {
  return owned.length===1 ? '' : owned.length ? 'table_ambiguous' : 'table_missing';
 }'''
 
+# Readiness wait for the table loading overlay. Live L3 table 3 held its
+# overlay past the old hardcoded 45 s and aborted the panel as capture_timeout;
+# a slow server-bound grid is not a stall, so allow the same order of headroom
+# as the page budget.
+TABLE_OVERLAY_TIMEOUT_MS = 120000
+# Default budget. Only table readiness opts into the longer one; every other
+# caller (taxpayer search, detail panels, list observer) keeps the original
+# 45 s so the unresponsive window is not widened without a measured need.
+TABLE_OVERLAY_LEGACY_TIMEOUT_MS = 45000
+
 TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
  const started=performance.now();
  const refusal=(CHECK_OWNER)(cursor);
@@ -396,7 +406,7 @@ TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
    Number.isFinite(options.ceiling_ms)?options.ceiling_ms:180000);
  // Overlay readiness budget comes from the same host constant as the legacy
  // wait_idle path, so both readiness deadlines can never drift apart.
- cursor.overlayMs=Number.isFinite(options.overlay_ms)?options.overlay_ms:45000;
+ cursor.overlayMs=Number.isFinite(options.overlay_ms)?options.overlay_ms:OVERLAY_MS_FALLBACK;
  if(performance.now()>=cursor.deadline) return {status:'budget'};
  const state=(READ_STATE)(owner);
  if(cursor.pending!==null || cursor.seen.has(state))
@@ -426,7 +436,7 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
    if(performance.now()>=cursor.deadline) return {budget:true};
    // Combine the old global overlay/settling wait with this owned snapshot.
    // Pending slices return to Python for Stop; neither deadline is refreshed.
-   if(cursor.idleDeadline==null) cursor.idleDeadline=Math.min(cursor.deadline,performance.now()+(cursor.overlayMs||45000));
+   if(cursor.idleDeadline==null) cursor.idleDeadline=Math.min(cursor.deadline,performance.now()+(cursor.overlayMs||OVERLAY_MS_FALLBACK));
    const sliceEnd=Math.min(cursor.deadline,cursor.idleDeadline,performance.now()+1000);
    while(true){
      const changed=(CHECK_OWNER)(cursor);
@@ -473,6 +483,13 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
 # If the state has not changed within one bounded renderer slice, resume the
 # original Python poll/read path. A returned snapshot never bypasses Stop,
 # ownership, source identity or the total table budget.
+# The JS fallback is the host constant, not a second literal: a future caller
+# that omits overlay_ms cannot silently regress to the retired 45 s cap.
+TABLE_CURSOR_ADVANCE_JS = TABLE_CURSOR_ADVANCE_JS.replace(
+    'OVERLAY_MS_FALLBACK', str(TABLE_OVERLAY_TIMEOUT_MS))
+TABLE_VERIFIED_JS = TABLE_VERIFIED_JS.replace(
+    'OVERLAY_MS_FALLBACK', str(TABLE_OVERLAY_TIMEOUT_MS))
+
 TABLE_CURSOR_TURN_JS = r'''async (cursor, options) => {
  const started=performance.now();
  const advance=(ADVANCE)(cursor,options);
@@ -562,17 +579,9 @@ def _timed_first_page_operation(stage, ordinal, max_page_size, observer=None):
             pass  # No control-flow or result authority in this recorder.
 
 
-# Readiness wait for the table loading overlay. Live L3 table 3 held its
-# overlay past the old hardcoded 45 s and aborted the panel as capture_timeout;
-# a slow server-bound grid is not a stall, so allow the same order of headroom
-# as the page budget.
-TABLE_OVERLAY_TIMEOUT_MS = 120000
-# Non-table waits (taxpayer search) keep the original budget: raising them
-# would widen the unresponsive window without any measured need.
-TABLE_OVERLAY_LEGACY_TIMEOUT_MS = 45000
 
 
-def wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS):
+def wait_idle(page, timeout_ms=TABLE_OVERLAY_LEGACY_TIMEOUT_MS):
     scope = _FIRST_PAGE_TIMING_SCOPE.get()
     with (_timed_first_page_operation('first_overlay_wait', *scope)
           if scope is not None else nullcontext()):
@@ -612,7 +621,7 @@ def maximize_page_size(page, container, *, max_page_size=100):
             page.keyboard.press('Escape')
             return False
         options.nth(index).evaluate('(e)=>e.click()')
-        wait_idle(page)
+        wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS)
         return True
     else:
         page.keyboard.press('Escape')
@@ -1021,7 +1030,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                            if observer is not None and max_page_size >= 250 else None)
             try:
                 try:
-                    wait_idle(page)
+                    wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS)
                 except PlaywrightTimeoutError as exc:
                     if observer is not None:
                         observer.emit('first_idle_timeout', error=exc)
@@ -1074,7 +1083,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     _click_table_paginator(previous, container_handle, check_cancel)
                     rewind_clicks += 1
                 with _timed_rewind_operation(rewind_timings, 'previous_idle'):
-                    wait_idle(page)
+                    wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS)
                 with _timed_rewind_operation(rewind_timings, 'previous_verify'):
                     if container_handle.evaluate(STATE_JS) == state:
                         raise RuntimeError('Table pagination did not return to the first page')
@@ -1266,7 +1275,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         poll_ms = (_diagnostic_clock() - poll_started) * 1000
         idle_started = _diagnostic_clock()
         if cursor is None:
-            wait_idle(page)
+            wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
         _check_cancel(check_cancel)
         # Polling already proved a changed page. Read the confirmed state and
@@ -2466,7 +2475,7 @@ def _find_taxpayer_row(page, npwp, check_cancel):
             except PlaywrightTimeoutError:
                 continue
         _check_cancel(check_cancel)
-        wait_idle(page, timeout_ms=TABLE_OVERLAY_LEGACY_TIMEOUT_MS)
+        wait_idle(page)
         _check_cancel(check_cancel)
         if row.count() != 1:
             raise RuntimeError('NPWP search was ambiguous; refusing to select a different taxpayer')

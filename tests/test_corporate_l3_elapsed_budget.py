@@ -192,3 +192,11 @@ def test_cursor_path_overlay_budget_is_threaded_not_hardcoded():
     assert 'cursor.overlayMs' in verified, 'cursor path must read the threaded budget'
     assert 'performance.now()+45000' not in verified, 'cursor path still hardcodes 45 s'
     assert 'options.overlay_ms' in advance, 'advance must record the host overlay budget'
+    # The fallback must be the host constant, not a second literal, and the
+    # placeholder must actually have been substituted at import time.
+    fallback = str(driver.TABLE_OVERLAY_TIMEOUT_MS)
+    assert 'OVERLAY_MS_FALLBACK' not in verified, 'placeholder left unsubstituted'
+    assert 'OVERLAY_MS_FALLBACK' not in advance, 'placeholder left unsubstituted'
+    assert fallback in verified and fallback in advance, (
+        'JS fallback must derive from TABLE_OVERLAY_TIMEOUT_MS')
+    assert '45000' not in advance, 'advance still carries the retired 45 s cap'
