@@ -1384,10 +1384,19 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         # shortens, never passes the hard ceiling, and a stalled page (no
         # verified page) earns nothing and still expires loudly.
         if result['complete']:
+            # Adaptive allowance: grant twice the duration this page actually
+            # took, floored at TABLE_CAPTURE_PAGE_BUDGET_SECONDS. Live page cost
+            # swings widely on the same 500-row grid (62.7 s on build 2037771,
+            # 173.9 s on cb37e3b: 70.9 s click + 103.0 s DOM read), so a fixed
+            # constant keeps needing bumps. Tracking measured cost self-tunes
+            # while the ceiling still bounds total time and a stalled page
+            # (which never reaches here) still earns nothing.
+            page_seconds = _diagnostic_clock() - page_started
             capture_deadline = min(
                 capture_ceiling,
                 max(capture_deadline,
-                    time.monotonic() + TABLE_CAPTURE_PAGE_BUDGET_SECONDS))
+                    time.monotonic() + max(TABLE_CAPTURE_PAGE_BUDGET_SECONDS,
+                                           2 * page_seconds)))
         if result['complete']:
             diagnostics.record('table.page_timing', table_page_stage='advanced',
                                pages=result['pages'], page_rows=len(data['rows']),

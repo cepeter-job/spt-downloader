@@ -136,3 +136,30 @@ def test_default_page_allowance_has_headroom_over_measured_live_page_cost():
     assert driver.TABLE_CAPTURE_PAGE_BUDGET_SECONDS >= MEASURED_LIVE_PAGE_SECONDS * 1.5, (
         'per-page allowance must keep headroom over the measured live page cost')
     assert driver.TABLE_CAPTURE_PAGE_BUDGET_SECONDS < driver.TABLE_CAPTURE_MAX_SECONDS
+
+
+def test_slow_page_earns_twice_its_measured_duration(page, monkeypatch, tmp_path):
+    """The allowance must track measured page cost, not a fixed constant.
+
+    Live cost on the same 500-row grid swung from 62.7 s (build 2037771) to
+    173.9 s (build cb37e3b), so a fixed per-page constant kept needing bumps.
+    A page slower than the floor must earn 2x its own duration for the next.
+    """
+    total = PAGES * SIZE
+    table = fixture(page, total=total, selected=SIZE)
+    slow_pages(page)
+    # Floor far below the real per-page cost: only the 2x-measured rule can
+    # carry the capture past the second page.
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0.6)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 0.02)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 120)
+
+    with d.session(tmp_path / 'log', 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=SIZE)
+        assert log.flush()
+
+    assert captured['complete'], captured.get('warning')
+    assert captured['pages'] == PAGES
+    assert captured['body_row_count'] == total
+    events = [r for r in records(tmp_path / 'log') if r['event'] == 'table.elapsed_budget']
+    assert events == [], 'adaptive allowance should have covered every page'
