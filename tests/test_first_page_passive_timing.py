@@ -44,7 +44,7 @@ class FakeFirstWaitPage:
 def expected_calls(fail):
     calls = [
         ('locator', '.p-datatable-loading-overlay:visible,.p-blockui:visible'),
-        ('wait_for', 'hidden', 45000),
+        ('wait_for', 'hidden', browser.TABLE_OVERLAY_TIMEOUT_MS),
     ]
     if not fail:
         calls.append(('wait_for_timeout', 180))

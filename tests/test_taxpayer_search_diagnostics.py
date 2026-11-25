@@ -23,7 +23,7 @@ def search_page(browser, monkeypatch, *, status=403, failed=False, send=True,
     original_wait = Locator.wait_for
 
     def wait(locator, *args, **kwargs):
-        if kwargs.get('timeout') == 45000:
+        if kwargs.get('timeout') == driver.TABLE_OVERLAY_TIMEOUT_MS:
             kwargs['timeout'] = 1000
         return original_wait(locator, *args, **kwargs)
 
