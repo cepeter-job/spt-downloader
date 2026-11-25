@@ -45,7 +45,7 @@ class ValidationPage(SourcePage):
 def test_stale_validation_rpc_cannot_refuse_the_new_attempt(monkeypatch, phase, action):
     page = ValidationPage()
     observer = driver.ListObserver(page)
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     try:
         observer.begin_navigation(LIST_URL)
         page.suspend_next = phase == 'initial'

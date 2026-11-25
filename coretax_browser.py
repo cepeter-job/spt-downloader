@@ -394,6 +394,9 @@ TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
  // the mapping is absolute from creation, never from dispatch time.
  cursor.deadline=cursor.created+Math.min(options.remaining_ms,
    Number.isFinite(options.ceiling_ms)?options.ceiling_ms:180000);
+ // Overlay readiness budget comes from the same host constant as the legacy
+ // wait_idle path, so both readiness deadlines can never drift apart.
+ cursor.overlayMs=Number.isFinite(options.overlay_ms)?options.overlay_ms:45000;
  if(performance.now()>=cursor.deadline) return {status:'budget'};
  const state=(READ_STATE)(owner);
  if(cursor.pending!==null || cursor.seen.has(state))
@@ -423,7 +426,7 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
    if(performance.now()>=cursor.deadline) return {budget:true};
    // Combine the old global overlay/settling wait with this owned snapshot.
    // Pending slices return to Python for Stop; neither deadline is refreshed.
-   if(cursor.idleDeadline==null) cursor.idleDeadline=Math.min(cursor.deadline,performance.now()+45000);
+   if(cursor.idleDeadline==null) cursor.idleDeadline=Math.min(cursor.deadline,performance.now()+(cursor.overlayMs||45000));
    const sliceEnd=Math.min(cursor.deadline,cursor.idleDeadline,performance.now()+1000);
    while(true){
      const changed=(CHECK_OWNER)(cursor);
@@ -519,7 +522,7 @@ def _check_cancel(check_cancel):
 
 
 # Bound to one original large-table First wait, not ordinary other waits.
-# ContextVar keeps the existing wait_idle(page) call and 45s/180ms constants.
+# ContextVar keeps the existing wait_idle(page) call and its 180ms settle.
 _FIRST_PAGE_TIMING_SCOPE = ContextVar('spt_first_page_timing_scope', default=None)
 
 
@@ -564,17 +567,26 @@ def _timed_first_page_operation(stage, ordinal, max_page_size, observer=None):
 # a slow server-bound grid is not a stall, so allow the same order of headroom
 # as the page budget.
 TABLE_OVERLAY_TIMEOUT_MS = 120000
+# Non-table waits (taxpayer search) keep the original budget: raising them
+# would widen the unresponsive window without any measured need.
+TABLE_OVERLAY_LEGACY_TIMEOUT_MS = 45000
 
 
-def wait_idle(page):
+def wait_idle(page, timeout_ms=TABLE_OVERLAY_TIMEOUT_MS):
     scope = _FIRST_PAGE_TIMING_SCOPE.get()
     with (_timed_first_page_operation('first_overlay_wait', *scope)
           if scope is not None else nullcontext()):
         # Live L3 table 3 kept its loading overlay up past the old 45 s cap and
         # aborted the whole panel as capture_timeout. A slow server-bound grid
         # is not a stall: the overlay is still the authoritative readiness
-        # signal, so give it the same order of headroom as the page budget.
-        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=TABLE_OVERLAY_TIMEOUT_MS)
+        # signal, so table readiness gets the same order of headroom as the
+        # page budget. Non-table callers pass TABLE_OVERLAY_LEGACY_TIMEOUT_MS.
+        # The wait stays a single locator call so the diagnostic call sequence
+        # and the documented Stop check points are unchanged. Stop during the
+        # wait is bounded by timeout_ms, which is why non-table callers keep
+        # the shorter legacy budget.
+        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(
+            state='hidden', timeout=timeout_ms)
     with (_timed_first_page_operation('first_settle_wait', *scope)
           if scope is not None else nullcontext()):
         page.wait_for_timeout(180)
@@ -1002,9 +1014,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             if observer is not None:
                 observer.stage = 'first_idle'
             idle_started = _diagnostic_clock()
-            # The original global-overlay wait is unchanged. Attribute only
-            # its original boundary and the original 180ms settle, not overlay
-            # identity (which needs an extra DOM call and remains unproved).
+            # Attribute the global-overlay wait boundary and the 180ms settle,
+            # not overlay identity (which needs an extra DOM call and remains
+            # unproved). The readiness budget itself is TABLE_OVERLAY_TIMEOUT_MS.
             scope_token = (_FIRST_PAGE_TIMING_SCOPE.set((ordinal, max_page_size, observer))
                            if observer is not None and max_page_size >= 250 else None)
             try:
@@ -1143,6 +1155,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     TABLE_CURSOR_TURN_JS if use_turn else TABLE_CURSOR_ADVANCE_JS,
                     {'remaining_ms': remaining_ms,
                      'ceiling_ms': TABLE_CAPTURE_MAX_SECONDS * 1000,
+                     'overlay_ms': TABLE_OVERLAY_TIMEOUT_MS,
                      'allow': result['pages'] < max_pages})
                 if timing is not None and type(advance) is dict:
                     timing['renderer_ms'] = advance.get(
@@ -2453,7 +2466,7 @@ def _find_taxpayer_row(page, npwp, check_cancel):
             except PlaywrightTimeoutError:
                 continue
         _check_cancel(check_cancel)
-        wait_idle(page)
+        wait_idle(page, timeout_ms=TABLE_OVERLAY_LEGACY_TIMEOUT_MS)
         _check_cancel(check_cancel)
         if row.count() != 1:
             raise RuntimeError('NPWP search was ambiguous; refusing to select a different taxpayer')

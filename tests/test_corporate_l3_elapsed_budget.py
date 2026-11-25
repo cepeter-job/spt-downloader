@@ -176,3 +176,19 @@ def test_overlay_readiness_timeout_has_headroom_over_the_measured_wait():
     MEASURED_OVERLAY_WAIT_SECONDS = 60.7
     assert driver.TABLE_OVERLAY_TIMEOUT_MS >= MEASURED_OVERLAY_WAIT_SECONDS * 1000 * 1.5, (
         'overlay readiness timeout must keep headroom over the measured wait')
+
+
+def test_cursor_path_overlay_budget_is_threaded_not_hardcoded():
+    """The bundled large-table path must use the same overlay budget.
+
+    wait_idle() only runs on the legacy path (cursor is None). The cursor path
+    waits inside TABLE_VERIFIED_JS, whose idleDeadline used to be a hardcoded
+    performance.now()+45000 -- so raising the Python constant alone left a
+    60.7 s overlay still aborting at 45 s on the path the live run actually
+    took. The JS must read the budget threaded from TABLE_OVERLAY_TIMEOUT_MS.
+    """
+    verified = driver.TABLE_VERIFIED_JS
+    advance = driver.TABLE_CURSOR_ADVANCE_JS
+    assert 'cursor.overlayMs' in verified, 'cursor path must read the threaded budget'
+    assert 'performance.now()+45000' not in verified, 'cursor path still hardcodes 45 s'
+    assert 'options.overlay_ms' in advance, 'advance must record the host overlay budget'

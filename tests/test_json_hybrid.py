@@ -233,7 +233,7 @@ def test_compatible_json_checkpoint_reuses_sections_without_new_browser_or_pdf(t
 def test_old_dom_checkpoint_remains_readable_and_is_not_relabelled_json(tmp_path, monkeypatch, mode):
     target = collector()
     reader = checkpoint_reader()
-    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page, **kwargs: None)
     run = protocol.run_fixture()
     protocol.write_checkpoint(tmp_path, run['records'][0])
     path = tmp_path / 'returns' / '0001.json'

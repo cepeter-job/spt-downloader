@@ -384,7 +384,7 @@ def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
         page, tmp_path, monkeypatch):
     table = fixture(page, total=601, selected=500)
     page.evaluate('at=1; draw()')
-    def original_wait_times_out(_page):
+    def original_wait_times_out(_page, **kwargs):
         raise driver.PlaywrightTimeoutError('synthetic first idle timeout')
 
     monkeypatch.setattr(driver, 'wait_idle', original_wait_times_out)
