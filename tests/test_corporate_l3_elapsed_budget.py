@@ -17,7 +17,7 @@ from test_diagnostics import records
 
 PAGES = 12
 SIZE = 500
-SERVER_MS = 120
+SERVER_MS = 400
 
 
 def slow_pages(page, pages=PAGES):
@@ -51,8 +51,11 @@ def test_large_multi_page_capture_is_not_truncated_by_the_flat_base_budget(
     slow_pages(page)
     # A base budget far below the total server-bound page time. Only verified
     # progress may extend it; the pre-fix flat budget stopped after ~2 pages.
-    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0.6)
-    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 0.5)
+    # The base is generous enough that the first page's DOM read fits even on a
+    # slow CI runner -- the flake that was aborting shard-3 -- while still
+    # being far below the total (12 x 400 ms = 4.8 s).
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 2.0)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 1.0)
     monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 120)
 
     with d.session(tmp_path / 'log', 'worker') as log:
@@ -149,8 +152,10 @@ def test_slow_page_earns_twice_its_measured_duration(page, monkeypatch, tmp_path
     table = fixture(page, total=total, selected=SIZE)
     slow_pages(page)
     # Floor far below the real per-page cost: only the 2x-measured rule can
-    # carry the capture past the second page.
-    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0.6)
+    # carry the capture past the second page. The base covers the first page
+    # on a slow runner; SERVER_MS (400 ms) is below the 2x-measured allowance
+    # that follows, so the rest of the grid is carried by progress alone.
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 2.0)
     monkeypatch.setattr(driver, 'TABLE_CAPTURE_PAGE_BUDGET_SECONDS', 0.02)
     monkeypatch.setattr(driver, 'TABLE_CAPTURE_MAX_SECONDS', 120)
 
