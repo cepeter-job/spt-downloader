@@ -68,7 +68,7 @@ _MEASURE_PIN_JS = r'''async url => {
 _MEASURE_MAIN_PIN_JS = _MEASURE_PIN_JS.replace('4*1024*1024', '5*1024*1024')
 
 
-def _auto_refresh_build_pins(page, check_cancel=None, expected_digest=None):
+def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     """Re-measure every pinned asset from the live page and record it locally.
 
     The Coretax frontend redeploys without notice; each redeploy used to break
@@ -77,15 +77,22 @@ def _auto_refresh_build_pins(page, check_cancel=None, expected_digest=None):
     pins and store the result in a user-scoped overlay, so a redeploy self-heals.
 
     Only URLs already in the reviewed allowlist are measured and recorded, so
-    this can never widen the allowlist. When ``expected_digest`` is given the
-    re-measured CIT asset must equal it, and the overlay is written only after
-    that check passes -- an unverified build is never persisted. Returns the
-    refreshed mapping, or None when any asset cannot be measured or verified,
-    and the caller then keeps the fail-closed DOM fallback.
+    this can never widen the allowlist. ``expected_digest`` is mandatory and
+    must be the positive 64-hex digest this page actually loaded: the re-measured
+    CIT asset has to equal it and the overlay is written only after that check
+    passes, so an unverified build is never persisted. Returns the refreshed
+    mapping, or None when any asset cannot be measured or verified, and the
+    caller then keeps the fail-closed DOM fallback.
     """
     from coretax_build_pins import load_build_pins, record_local_pins
     from coretax_browser import _check_cancel
     from coretax_corporate_projection import MAIN_SOURCE
+    # A missing/unusable loaded digest must never reach the record step: the
+    # caller refuses before calling, and this guard keeps that true for any
+    # future caller. None == None must never admit a build.
+    if (not isinstance(expected_digest, str) or len(expected_digest) != 64
+            or any(c not in '0123456789abcdef' for c in expected_digest)):
+        return None
     pins = load_build_pins()
     if not pins:
         return None
@@ -100,7 +107,7 @@ def _auto_refresh_build_pins(page, check_cancel=None, expected_digest=None):
         if not isinstance(digest, str) or len(digest) != 64:
             return None
         measured[url] = digest
-    if expected_digest is not None and measured.get(CIT_SOURCE_URL) != expected_digest:
+    if measured.get(CIT_SOURCE_URL) != expected_digest:
         return None
     if not record_local_pins(measured):
         return None
@@ -1704,8 +1711,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             # A redeploy is the common cause, so try to re-measure the pinned
             # assets from this authenticated page before giving up. The overlay
             # can only cover URLs the reviewed file already pins, is written only
-            # after the re-measured CIT asset matches what this page loaded, and
-            # structural validation below remains the real gate on the build.
+            # after the re-measured CIT asset equals the digest this page loaded,
+            # and structural validation below remains the real gate on the build.
+            # A missing/unusable loaded digest never reaches the record step:
+            # _auto_refresh_build_pins requires a positive 64-hex expectation.
             refreshed = _auto_refresh_build_pins(page, check_cancel,
                                                  expected_digest=digest)
             if refreshed is None:

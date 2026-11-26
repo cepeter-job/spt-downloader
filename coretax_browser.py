@@ -1430,7 +1430,6 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 max(capture_deadline,
                     time.monotonic() + max(TABLE_CAPTURE_PAGE_BUDGET_SECONDS,
                                            2 * page_seconds)))
-        if result['complete']:
             diagnostics.record('table.page_timing', table_page_stage='advanced',
                                pages=result['pages'], page_rows=len(data['rows']),
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000,
