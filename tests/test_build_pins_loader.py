@@ -1,6 +1,7 @@
 """Build-pin allowlist: reviewed file wins, failures fail closed."""
 import json
 
+import coretax_build_pins as pins_mod
 from coretax_build_pins import load_build_pins
 
 GOOD = {'version': 1, 'digests': {'https://example.invalid/a.js': 'a' * 64}}
@@ -51,8 +52,6 @@ def test_single_source_constants_match_the_pin_file():
 
 def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
     """The overlay records which reviewed bundle it was measured against."""
-    import coretax_build_pins as pins_mod
-
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
     url = sorted(load_build_pins())[0]
     assert pins_mod.record_local_pins({url: 'b' * 64}) is True
@@ -63,8 +62,6 @@ def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
 
 
 def test_clear_local_pins_removes_the_overlay(tmp_path, monkeypatch):
-    import coretax_build_pins as pins_mod
-
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
     url = sorted(load_build_pins())[0]
     assert pins_mod.record_local_pins({url: 'b' * 64}) is True
