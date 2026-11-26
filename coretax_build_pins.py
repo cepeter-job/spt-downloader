@@ -13,6 +13,7 @@ can only supply digests for URLs the reviewed file already lists, so it can
 never widen the allowlist, and the reviewed bundle stays authoritative
 whenever it matches.
 """
+import contextlib
 import json
 import os
 import re
@@ -105,10 +106,8 @@ def record_local_pins(digests):
                           indent=2, sort_keys=True)
             os.replace(tmp, target)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except Exception:
-                pass
             raise
         return True
     except Exception:
@@ -120,7 +119,5 @@ def clear_local_pins():
     target = local_pins_path()
     if target is None:
         return
-    try:
+    with contextlib.suppress(OSError):
         target.unlink()
-    except Exception:
-        pass
