@@ -246,7 +246,9 @@ durasi renderer untuk pemisahan residual transport),
 `pilot_label_text` (normalisasi `.strip()` lokal dari teks tadi,
 **bukan** Playwright RPC tambahan),
 `first_overlay_wait` (wait global hidden yang sudah ada, timeout
-45.000 ms), dan `first_settle_wait` (jeda Playwright 180 ms yang
+`TABLE_OVERLAY_TIMEOUT_MS` 120.000 ms untuk kesiapan tabel; pemanggil non-tabel
+tetap memakai `TABLE_OVERLAY_LEGACY_TIMEOUT_MS` 45.000 ms), dan
+`first_settle_wait` (jeda Playwright 180 ms yang
 sudah ada, hanya jika wait pertama sukses). Setiap event memiliki
 `table_first_page_outcome=returned|raised`,
 `duration_ms`, `table_rpc_thread_cpu_ms` dan ordinal form/tabel.
@@ -1210,7 +1212,8 @@ RPC `wait_idle` terpisah untuk halaman lanjutan. `table_idle_ms` hanya mencatat
 waktu bagian host yang kini kosong; `table_dom_ms` mencakup RPC snapshot beserta
 tunggu overlay dan settling180ms. `table_dom_renderer_ms` tetap mengukur
 ekstraksi setelah tunggu tersebut. Pending slice paling lama1000ms memberi
-kesempatan pemeriksaan Stop di Python; deadline loading45s dan tabel180s tetap
+kesempatan pemeriksaan Stop di Python; deadline loading
+`TABLE_OVERLAY_TIMEOUT_MS` 120s dan tabel180s tetap
 berjalan dan tidak diulang. Selisih wall/renderer bukan ukuran antrean murni,
 dan pengurangan RPC tidak membuktikan peningkatan kecepatan live.
 

@@ -87,6 +87,48 @@ def test_corporate_build_gate_never_admits_missing_or_mismatched_digests(
     assert len(events) == 1 and events[0]['corporate_observer_stage'] == expected
 
 
+def test_corporate_build_gate_refuses_when_nothing_loaded_and_fetch_succeeds(
+        monkeypatch, tmp_path):
+    """A page that never loaded the CIT chunk must stay fail-closed.
+
+    The gate passes the loaded digest as the refresh expectation. When that
+    digest is None but a fresh fetch of the same URL succeeds, a loose
+    ``expected_digest is not None`` guard would skip the comparison and record
+    an overlay for a build nobody verified (None == None). The gate must refuse.
+    """
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, *args):
+        # Nothing loaded -> None; a fresh fetch of the pinned URL succeeds.
+        return None if script is coretax_corporate._BUILD_HASH else 'b' * 64
+
+    page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(),
+            approved_digest='a' * 64)
+        assert log.flush()
+
+    assert forms is None
+    events = records(tmp_path)
+    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    assert not [e for e in events if e['event'] == 'build.auto_admitted']
+    assert not (tmp_path / 'local' / 'SPTDownloader' / 'build-pins.local.json').exists()
+
+
 def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeypatch, tmp_path):
     import coretax_browser
     import coretax_corporate

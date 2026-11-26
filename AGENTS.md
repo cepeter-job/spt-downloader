@@ -329,7 +329,7 @@ now covers this single RPC and may report its bounded renderer duration;
 This is an unverified transport-overhead hypothesis, not an established
 speedup; retain the 180-second table budget and PARTIAL behavior.
 
-DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
+DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, loading-overlay wait, Stop and PARTIAL semantics remain authoritative. Table readiness uses `TABLE_OVERLAY_TIMEOUT_MS` (120 s, above the measured 60.7 s live wait); every non-table caller keeps `TABLE_OVERLAY_LEGACY_TIMEOUT_MS` (45 s) so the unresponsive window is not widened without a measured need. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
 For the large-table DOM fallback only (`max_page_size >= 250`), resolve
 Previous on the original captured owner in **one** read-only `evaluate_handle`
@@ -425,7 +425,7 @@ unconditional only when a diagnostic worker session is active and
 table, emit fixed-stage `table.first_page_timing`: the already-required
 pilot page-size label `query_selector`, its original `inner_text`,
 the existing global `.p-datatable-loading-overlay:visible,.p-blockui:visible`
-`wait_for(hidden, timeout=45000)`, and the existing
+`wait_for(hidden, timeout=TABLE_OVERLAY_TIMEOUT_MS)`, and the existing
 `page.wait_for_timeout(180)` (only when the overlay wait returns).
 Python monotonic wall and calling-thread CPU clocks record returned/raised;
 no new browser calls, ownership queries, CDP, timers, polling loops,

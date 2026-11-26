@@ -115,7 +115,8 @@ def test_auto_refresh_records_every_pinned_asset(reviewed, isolated_overlay):
         seen.append((script, url))
         return DIGEST_B
 
-    refreshed = coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate))
+    refreshed = coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
 
     assert refreshed is not None
     assert set(refreshed) == set(reviewed)
@@ -135,7 +136,8 @@ def test_auto_refresh_uses_the_larger_reader_for_main(reviewed, isolated_overlay
         scripts[url] = script
         return DIGEST_B
 
-    assert coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate))
+    assert coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
     assert scripts[MAIN_SOURCE] is coretax_corporate._MEASURE_MAIN_PIN_JS
     assert '5*1024*1024' in scripts[MAIN_SOURCE] and '4*1024*1024' not in scripts[MAIN_SOURCE]
     for url, script in scripts.items():
@@ -149,7 +151,8 @@ def test_auto_refresh_refuses_when_any_asset_cannot_be_measured(isolated_overlay
     def evaluate(script, url):
         return None
 
-    assert coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate)) is None
+    assert coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B) is None
     assert not isolated_overlay.exists(), 'an unverifiable build must not be recorded'
 
 
@@ -159,8 +162,28 @@ def test_auto_refresh_refuses_when_the_page_raises(isolated_overlay):
     def evaluate(script, url):
         raise RuntimeError('synthetic navigation')
 
-    assert coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate)) is None
+    assert coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B) is None
     assert not isolated_overlay.exists()
+
+
+@pytest.mark.parametrize('expected', [None, '', 'not-a-digest', DIGEST_B.upper(),
+                                      DIGEST_B[:-1]])
+def test_auto_refresh_refuses_an_unusable_expected_digest(isolated_overlay, expected):
+    """A missing/unusable loaded digest must never reach the record step.
+
+    The gate passes the digest the page actually loaded. When that is None the
+    re-measured CIT asset would otherwise compare equal to nothing and the
+    overlay would be written for a build nobody verified (None == None).
+    """
+    import coretax_corporate
+
+    def evaluate(script, url):
+        return DIGEST_B
+
+    assert coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=expected) is None
+    assert not isolated_overlay.exists(), 'an unverified build must not be persisted'
 
 
 def test_auto_refresh_does_not_record_a_mismatched_cit_asset(reviewed, isolated_overlay):
