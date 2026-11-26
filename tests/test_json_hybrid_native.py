@@ -14,11 +14,15 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
+from coretax_build_pins import load_build_pins
 import support_json_corpus as corpus
 import support_financial_browser as financial
 
 ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'
+# Every asset the reviewed bundle pins. On drift the build gate re-measures all
+# of them, so a probe is expected traffic rather than a surprise request.
+PINNED_ASSETS = frozenset(load_build_pins())
 PDF_URL = corpus.ORIGIN + '/synthetic-existing/statement.pdf'
 GROUPS = ((1, 'Group 1'), (1, 'Group 2'), (1, 'Group 3'), (1, 'Group 4'), (1, 'Other Group'),
           (2, 'Permanent'), (2, 'Non-permanent'),
@@ -121,6 +125,11 @@ class NativeFixture:
             assert request.method == 'GET'
             route.fulfill(status=200 if self.pdf_available else 404,
                           content_type='application/pdf', body=financial.PDF if self.pdf_available else b'')
+        elif url in PINNED_ASSETS:
+            # The build gate re-measures every pinned asset when it sees drift.
+            # This fixture serves only the CIT chunk, so the probe cannot verify
+            # the build -- exactly the case that must stay fail-closed.
+            route.abort()
         else:
             self.unexpected.append({'url': url, 'method': request.method})
             route.abort()
