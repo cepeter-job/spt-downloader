@@ -62,8 +62,13 @@ _MEASURE_PIN_JS = r'''async url => {
    .map(x=>x.toString(16).padStart(2,'0')).join('');
 }'''
 
+# MAIN is the one reviewed chunk above 4 MiB, so it keeps the same larger byte
+# budget the loaded-asset readers already use for it. Measuring it with the
+# 4 MiB guard would refuse the very asset a redeploy changes.
+_MEASURE_MAIN_PIN_JS = _MEASURE_PIN_JS.replace('4*1024*1024', '5*1024*1024')
 
-def _auto_refresh_build_pins(page, check_cancel=None):
+
+def _auto_refresh_build_pins(page, check_cancel=None, expected_digest=None):
     """Re-measure every pinned asset from the live page and record it locally.
 
     The Coretax frontend redeploys without notice; each redeploy used to break
@@ -72,25 +77,31 @@ def _auto_refresh_build_pins(page, check_cancel=None):
     pins and store the result in a user-scoped overlay, so a redeploy self-heals.
 
     Only URLs already in the reviewed allowlist are measured and recorded, so
-    this can never widen the allowlist. Returns the refreshed mapping, or None
-    when any asset cannot be measured -- the caller then keeps the fail-closed
-    DOM fallback rather than admitting a build it could not verify.
+    this can never widen the allowlist. When ``expected_digest`` is given the
+    re-measured CIT asset must equal it, and the overlay is written only after
+    that check passes -- an unverified build is never persisted. Returns the
+    refreshed mapping, or None when any asset cannot be measured or verified,
+    and the caller then keeps the fail-closed DOM fallback.
     """
     from coretax_build_pins import load_build_pins, record_local_pins
     from coretax_browser import _check_cancel
+    from coretax_corporate_projection import MAIN_SOURCE
     pins = load_build_pins()
     if not pins:
         return None
     measured = {}
     for url in pins:
         _check_cancel(check_cancel)
+        script = _MEASURE_MAIN_PIN_JS if url == MAIN_SOURCE else _MEASURE_PIN_JS
         try:
-            digest = page.evaluate(_MEASURE_PIN_JS, url)
+            digest = page.evaluate(script, url)
         except Exception:
             return None
         if not isinstance(digest, str) or len(digest) != 64:
             return None
         measured[url] = digest
+    if expected_digest is not None and measured.get(CIT_SOURCE_URL) != expected_digest:
+        return None
     if not record_local_pins(measured):
         return None
     return measured
@@ -1692,10 +1703,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or digest != approved_digest):
             # A redeploy is the common cause, so try to re-measure the pinned
             # assets from this authenticated page before giving up. The overlay
-            # can only cover URLs the reviewed file already pins, and structural
-            # validation below remains the real gate on the admitted build.
-            refreshed = _auto_refresh_build_pins(page, check_cancel)
-            if refreshed is None or refreshed.get(CIT_SOURCE_URL) != digest:
+            # can only cover URLs the reviewed file already pins, is written only
+            # after the re-measured CIT asset matches what this page loaded, and
+            # structural validation below remains the real gate on the build.
+            refreshed = _auto_refresh_build_pins(page, check_cancel,
+                                                 expected_digest=digest)
+            if refreshed is None:
                 # Name the redeploy instead of leaving a bare whole-record
                 # fallback: fixed enum only, never the digest, URL or bytes.
                 diagnostics.record('build.unfamiliar_build', build_source='corporate')

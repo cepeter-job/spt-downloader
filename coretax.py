@@ -565,6 +565,8 @@ def parser():
     cli.add_argument('--detail-source', choices=['dom', 'json-first', 'json-only'], default='dom', action=_DetailSource,
                      help='DOM by default; json-first may fall back to DOM; json-only is strict and requires --spt-badan-only')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
+    cli.add_argument('--reset-build-pins', action='store_true',
+                     help='Delete the local build-pin overlay and exit; capture falls back to DOM until the next measurement')
     return cli
 
 
@@ -662,6 +664,13 @@ def _main(argv=None):
         cli.error('--spt-badan-only applies to live detail capture, not offline or inventory-only mode')
     if args.detail_source == 'json-only' and not (args.spt_badan_only or args.from_json):
         cli.error('--detail-source json-only requires --spt-badan-only for live capture')
+    if args.reset_build_pins:
+        # An explicit operator reset, never an implicit one: the overlay is the
+        # only record of an auto-admitted build, so dropping it must be visible.
+        from coretax_build_pins import clear_local_pins
+        clear_local_pins()
+        print('Local build-pin overlay removed; capture falls back to DOM until the next measurement.')
+        return 0
     diagnostics.record('operation.started', operation='offline' if args.from_json else 'resume' if args.resume else 'export')
     if args.from_json:
         run = json.loads(args.from_json.read_text(encoding='utf-8'))
