@@ -2,7 +2,6 @@
 import json
 
 import coretax_build_pins as pins_mod
-from coretax_build_pins import load_build_pins
 
 GOOD = {'version': 1, 'digests': {'https://example.invalid/a.js': 'a' * 64}}
 
@@ -10,17 +9,17 @@ GOOD = {'version': 1, 'digests': {'https://example.invalid/a.js': 'a' * 64}}
 def test_valid_file_returns_digests(tmp_path):
     path = tmp_path / 'pins.json'
     path.write_text(json.dumps(GOOD), encoding='utf-8')
-    assert load_build_pins(path) == GOOD['digests']
+    assert pins_mod.load_build_pins(path) == GOOD['digests']
 
 
 def test_missing_file_fails_closed(tmp_path):
-    assert load_build_pins(tmp_path / 'absent.json') == {}
+    assert pins_mod.load_build_pins(tmp_path / 'absent.json') == {}
 
 
 def test_corrupt_file_fails_closed(tmp_path):
     path = tmp_path / 'pins.json'
     path.write_text('{not json', encoding='utf-8')
-    assert load_build_pins(path) == {}
+    assert pins_mod.load_build_pins(path) == {}
 
 
 def test_wrong_shape_fails_closed(tmp_path):
@@ -31,12 +30,12 @@ def test_wrong_shape_fails_closed(tmp_path):
                     {'version': 1}):
         path = tmp_path / 'pins.json'
         path.write_text(json.dumps(payload), encoding='utf-8')
-        assert load_build_pins(path) == {}
+        assert pins_mod.load_build_pins(path) == {}
 
 
 def test_checked_in_pins_cover_all_observer_sources():
     """The shipped pin file must pin every URL an observer hashes."""
-    pins = load_build_pins()
+    pins = pins_mod.load_build_pins()
     assert len(pins) == 6
     assert all(digest and len(digest) == 64 for digest in pins.values())
 
@@ -45,7 +44,7 @@ def test_single_source_constants_match_the_pin_file():
     """Duplicate digest constants must not drift from build-pins.json."""
     import coretax_corporate
     import coretax_json
-    pins = load_build_pins()
+    pins = pins_mod.load_build_pins()
     assert coretax_corporate.CIT_SOURCE_SHA256 == pins[coretax_corporate.CIT_SOURCE_URL]
     assert coretax_json.REFERENCE_ORDER_SHA256 == pins[coretax_json.REFERENCE_ORDER_SOURCE]
 
@@ -53,7 +52,7 @@ def test_single_source_constants_match_the_pin_file():
 def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
     """The overlay records which reviewed bundle it was measured against."""
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
-    url = sorted(load_build_pins())[0]
+    url = sorted(pins_mod.load_build_pins())[0]
     assert pins_mod.record_local_pins({url: 'b' * 64}) is True
     stored = json.loads(pins_mod.local_pins_path().read_text(encoding='utf-8'))
     assert stored['version'] == 1
@@ -63,7 +62,7 @@ def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
 
 def test_clear_local_pins_removes_the_overlay(tmp_path, monkeypatch):
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
-    url = sorted(load_build_pins())[0]
+    url = sorted(pins_mod.load_build_pins())[0]
     assert pins_mod.record_local_pins({url: 'b' * 64}) is True
     pins_mod.clear_local_pins()
     assert not pins_mod.local_pins_path().exists()
