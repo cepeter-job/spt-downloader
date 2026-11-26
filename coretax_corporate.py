@@ -49,6 +49,52 @@ _BUILD_HASH = r'''async url => {
    .map(x=>x.toString(16).padStart(2,'0')).join('');
 }'''
 
+# Same measurement as _BUILD_HASH but without the "already loaded" precondition:
+# a redeploy may serve chunks this page never pulled in, and the overlay records
+# what the portal currently serves rather than what this document happened to
+# load. Content-type and size guards are identical.
+_MEASURE_PIN_JS = r'''async url => {
+ const response=await fetch(url,{credentials:'same-origin',redirect:'error',cache:'no-store'});
+ if(!response.ok || !/javascript/i.test(response.headers.get('content-type')||''))return null;
+ const bytes=await response.arrayBuffer();
+ if(bytes.byteLength>4*1024*1024)return null;
+ return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+   .map(x=>x.toString(16).padStart(2,'0')).join('');
+}'''
+
+
+def _auto_refresh_build_pins(page, check_cancel=None):
+    """Re-measure every pinned asset from the live page and record it locally.
+
+    The Coretax frontend redeploys without notice; each redeploy used to break
+    native capture silently until someone re-measured the JS hashes by hand and
+    shipped a release. On drift we measure the assets the reviewed file already
+    pins and store the result in a user-scoped overlay, so a redeploy self-heals.
+
+    Only URLs already in the reviewed allowlist are measured and recorded, so
+    this can never widen the allowlist. Returns the refreshed mapping, or None
+    when any asset cannot be measured -- the caller then keeps the fail-closed
+    DOM fallback rather than admitting a build it could not verify.
+    """
+    from coretax_build_pins import load_build_pins, record_local_pins
+    from coretax_browser import _check_cancel
+    pins = load_build_pins()
+    if not pins:
+        return None
+    measured = {}
+    for url in pins:
+        _check_cancel(check_cancel)
+        try:
+            digest = page.evaluate(_MEASURE_PIN_JS, url)
+        except Exception:
+            return None
+        if not isinstance(digest, str) or len(digest) != 64:
+            return None
+        measured[url] = digest
+    if not record_local_pins(measured):
+        return None
+    return measured
+
 
 def _tabs(page):
     view = page.locator('.main-content .p-tabview').first
@@ -1644,10 +1690,21 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or len(digest) != 64 or len(approved_digest) != 64
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
-            # Name the redeploy instead of leaving a bare whole-record fallback:
-            # fixed enum only, never the digest, URL or asset bytes.
-            diagnostics.record('build.unfamiliar_build', build_source='corporate')
-            return unavailable(reason='build_unfamiliar')
+            # A redeploy is the common cause, so try to re-measure the pinned
+            # assets from this authenticated page before giving up. The overlay
+            # can only cover URLs the reviewed file already pins, and structural
+            # validation below remains the real gate on the admitted build.
+            refreshed = _auto_refresh_build_pins(page, check_cancel)
+            if refreshed is None or refreshed.get(CIT_SOURCE_URL) != digest:
+                # Name the redeploy instead of leaving a bare whole-record
+                # fallback: fixed enum only, never the digest, URL or bytes.
+                diagnostics.record('build.unfamiliar_build', build_source='corporate')
+                return unavailable(reason='build_unfamiliar')
+            # Admitted on a re-measured build. Say so loudly: the reviewed
+            # bundle no longer matches and only the structural checks below
+            # stand between this build and the spreadsheet.
+            diagnostics.record('build.auto_admitted', level='WARNING',
+                               build_source='corporate')
         _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():

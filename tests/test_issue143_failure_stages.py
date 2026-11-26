@@ -13,6 +13,21 @@ from test_mpn import scope_run
 from test_mpn_capture_protocol import SyntheticUI
 
 
+def _build_gate_page(observed, measurable=None):
+    """Fake page: the build-hash call sees ``observed``, re-measurement sees
+    ``measurable``. ``measurable=None`` models a page that cannot re-verify the
+    pinned assets, so the gate must keep its fail-closed refusal.
+    """
+    import coretax_corporate
+
+    def evaluate(script, *args):
+        if script is coretax_corporate._MEASURE_PIN_JS:
+            return measurable
+        return observed
+
+    return SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
+
+
 @pytest.mark.parametrize('stage', ['build', 'tabs'])
 def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tmp_path, stage):
     import coretax_browser
@@ -27,8 +42,7 @@ def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tm
     if stage == 'tabs':
         monkeypatch.setattr(coretax_corporate, '_tabs',
                             lambda page: (object(), SimpleNamespace(count=lambda: 0)))
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
     approved = 'd' * 64 if stage == 'build' else 'c' * 64
     with diagnostics.session(tmp_path, 'worker') as log:
@@ -62,8 +76,7 @@ def test_corporate_build_gate_never_admits_missing_or_mismatched_digests(
     monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
     monkeypatch.setattr(coretax_corporate, '_tabs',
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: observed)
+    page = _build_gate_page(observed)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
@@ -126,8 +139,7 @@ def test_corporate_build_mismatch_names_gate_and_emits_unfamiliar_build(
     monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
     monkeypatch.setattr(coretax_corporate, '_tabs',
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: observed)
+    page = _build_gate_page(observed)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
@@ -157,8 +169,7 @@ def test_corporate_unfamiliar_build_carries_only_fixed_enums(monkeypatch, tmp_pa
     monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
     monkeypatch.setattr(coretax_corporate, '_tabs',
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'a' * 64)
+    page = _build_gate_page('a' * 64)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
@@ -303,8 +314,7 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
         return panel
 
     monkeypatch.setattr(coretax_corporate, '_native_panel', fake_panel)
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     forms = coretax_corporate.observe_forms(
         page, {'list_url': 'https://synthetic.invalid/list',
                'record_id': 'SYNTHETIC-ID'},
@@ -359,8 +369,7 @@ def _observe_with_tabs(monkeypatch, tabs, captions):
         return panel
 
     monkeypatch.setattr(coretax_corporate, '_native_panel', fake_panel)
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     forms = coretax_corporate.observe_forms(
         page, {'list_url': 'https://synthetic.invalid/list',
                'record_id': 'SYNTHETIC-ID'},
@@ -508,8 +517,7 @@ def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_pat
     panel = SimpleNamespace(locator=lambda selector: form)
     monkeypatch.setattr(coretax_corporate, '_native_panel',
                         lambda page, view, tab, caption, record, cc: panel)
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     with diagnostics.session(tmp_path, 'worker'):
         forms = coretax_corporate.observe_forms(
             page, {'list_url': 'https://synthetic.invalid/list',
@@ -546,8 +554,7 @@ def test_corporate_observe_timing_emitted_on_refusal(monkeypatch, tmp_path):
     monkeypatch.setattr(coretax_corporate, '_tabs',
                         lambda page: (object(), SimpleNamespace(
                             count=lambda: 0)))
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     with diagnostics.session(tmp_path, 'worker'):
         forms = coretax_corporate.observe_forms(
             page, {'list_url': 'https://synthetic.invalid/list',
@@ -619,8 +626,7 @@ def _observe_with_capture(monkeypatch, tmp_path, *, missing_tab=None):
                                          nth=lambda i: Tab(present[i], True))
 
     monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
-    page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'c' * 64)
+    page = _build_gate_page('c' * 64)
     with diagnostics.session(tmp_path, 'worker'):
         forms = coretax_corporate.observe_forms(
             page, {'list_url': 'https://synthetic.invalid/list',
