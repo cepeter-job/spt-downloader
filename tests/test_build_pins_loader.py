@@ -47,3 +47,27 @@ def test_single_source_constants_match_the_pin_file():
     pins = load_build_pins()
     assert coretax_corporate.CIT_SOURCE_SHA256 == pins[coretax_corporate.CIT_SOURCE_URL]
     assert coretax_json.REFERENCE_ORDER_SHA256 == pins[coretax_json.REFERENCE_ORDER_SOURCE]
+
+
+def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
+    """The overlay records which reviewed bundle it was measured against."""
+    import coretax_build_pins as pins_mod
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+    url = sorted(load_build_pins())[0]
+    assert pins_mod.record_local_pins({url: 'b' * 64}) is True
+    stored = json.loads(pins_mod.local_pins_path().read_text(encoding='utf-8'))
+    assert stored['version'] == 1
+    assert stored['base'] == pins_mod._base(pins_mod._reviewed())
+    assert stored['digests'] == {url: 'b' * 64}
+
+
+def test_clear_local_pins_removes_the_overlay(tmp_path, monkeypatch):
+    import coretax_build_pins as pins_mod
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+    url = sorted(load_build_pins())[0]
+    assert pins_mod.record_local_pins({url: 'b' * 64}) is True
+    pins_mod.clear_local_pins()
+    assert not pins_mod.local_pins_path().exists()
+    pins_mod.clear_local_pins()  # a second reset is a no-op, never an error

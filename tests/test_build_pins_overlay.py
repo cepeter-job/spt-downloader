@@ -6,10 +6,13 @@ shipped a release -- the live regression on NPWP 0211096821016000 (native JSON
 on 24 Nov, DOM on 26 Nov) was exactly that.
 
 The overlay is deliberately narrow: it may only supply digests for URLs the
-reviewed bundle already pins, so it can never widen the allowlist, and the
-reviewed bundle stays authoritative whenever it matches.
+reviewed bundle already pins, so it can never widen the allowlist; it is only
+written once the re-measured CIT asset matches what the page loaded; and it is
+stamped with the reviewed bundle it was measured against, so a new reviewed
+release retires it and the reviewed bundle stays authoritative.
 """
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -31,7 +34,6 @@ def isolated_overlay(monkeypatch, tmp_path):
 @pytest.fixture
 def reviewed():
     """The reviewed bundle read verbatim, so a stray overlay cannot skew it."""
-    from pathlib import Path
     target = Path(pins_mod.__file__).resolve().parent / 'resources' / 'build-pins.json'
     pins = pins_mod.load_build_pins(target)
     assert pins, 'the reviewed pin bundle must be present'
@@ -76,13 +78,41 @@ def test_corrupt_overlay_falls_back_to_the_reviewed_pins(reviewed, isolated_over
     assert pins_mod.load_build_pins() == reviewed
 
 
+def test_overlay_is_retired_when_the_reviewed_bundle_changes(reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """A new reviewed release must win over an overlay measured against the old one."""
+    url = sorted(reviewed)[0]
+    assert pins_mod.record_local_pins({url: DIGEST_B}) is True
+    assert pins_mod.load_build_pins()[url] == DIGEST_B
+
+    # Ship a new reviewed bundle in an isolated module root; the overlay that
+    # was measured against the previous bundle must stop applying.
+    root = tmp_path / 'app'
+    (root / 'resources').mkdir(parents=True)
+    retired = dict(reviewed)
+    retired[url] = DIGEST_A
+    (root / 'resources' / 'build-pins.json').write_text(
+        json.dumps({'version': 1, 'digests': retired}), encoding='utf-8')
+    monkeypatch.setattr(pins_mod, '__file__', str(root / 'coretax_build_pins.py'))
+
+    assert pins_mod.load_build_pins() == retired
+
+
+def test_overlay_without_a_base_stamp_is_ignored(reviewed, isolated_overlay):
+    """An overlay written by an older build cannot override today's bundle."""
+    isolated_overlay.parent.mkdir(parents=True, exist_ok=True)
+    isolated_overlay.write_text(
+        json.dumps({'version': 1, 'digests': {sorted(reviewed)[0]: DIGEST_B}}),
+        encoding='utf-8')
+    assert pins_mod.load_build_pins() == reviewed
+
+
 def test_auto_refresh_records_every_pinned_asset(reviewed, isolated_overlay):
     import coretax_corporate
 
     seen = []
 
     def evaluate(script, url):
-        seen.append(url)
+        seen.append((script, url))
         return DIGEST_B
 
     refreshed = coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate))
@@ -92,6 +122,25 @@ def test_auto_refresh_records_every_pinned_asset(reviewed, isolated_overlay):
     assert len(seen) == len(refreshed)
     assert isolated_overlay.exists()
     assert json.loads(isolated_overlay.read_text(encoding='utf-8'))['version'] == 1
+
+
+def test_auto_refresh_uses_the_larger_reader_for_main(reviewed, isolated_overlay):
+    """MAIN is the one reviewed chunk above 4 MiB; the 4 MiB guard refuses it."""
+    import coretax_corporate
+    from coretax_corporate_projection import MAIN_SOURCE
+
+    scripts = {}
+
+    def evaluate(script, url):
+        scripts[url] = script
+        return DIGEST_B
+
+    assert coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate))
+    assert scripts[MAIN_SOURCE] is coretax_corporate._MEASURE_MAIN_PIN_JS
+    assert '5*1024*1024' in scripts[MAIN_SOURCE] and '4*1024*1024' not in scripts[MAIN_SOURCE]
+    for url, script in scripts.items():
+        if url != MAIN_SOURCE:
+            assert script is coretax_corporate._MEASURE_PIN_JS
 
 
 def test_auto_refresh_refuses_when_any_asset_cannot_be_measured(isolated_overlay):
@@ -112,6 +161,21 @@ def test_auto_refresh_refuses_when_the_page_raises(isolated_overlay):
 
     assert coretax_corporate._auto_refresh_build_pins(SimpleNamespace(evaluate=evaluate)) is None
     assert not isolated_overlay.exists()
+
+
+def test_auto_refresh_does_not_record_a_mismatched_cit_asset(reviewed, isolated_overlay):
+    """The overlay is written only after the re-measured CIT asset is verified."""
+    import coretax_corporate
+    from coretax_corporate_projection import CIT_SOURCE
+
+    def evaluate(script, url):
+        return DIGEST_A if url == CIT_SOURCE else DIGEST_B
+
+    refreshed = coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+
+    assert refreshed is None
+    assert not isolated_overlay.exists(), 'an unverified build must not be persisted'
 
 
 def test_gate_auto_admits_on_drift_and_emits_diagnostic(
@@ -152,3 +216,38 @@ def test_gate_auto_admits_on_drift_and_emits_diagnostic(
     assert len(admitted) == 1 and admitted[0]['build_source'] == 'corporate'
     assert not [e for e in events if e['event'] == 'build.unfamiliar_build']
     assert isolated_overlay.exists(), 'the admitted build must be recorded'
+
+
+def test_gate_refuses_and_records_nothing_when_the_remeasure_disagrees(
+        monkeypatch, tmp_path, isolated_overlay):
+    """A page whose loaded chunk differs from a fresh fetch stays fail-closed."""
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+
+    def evaluate(script, *args):
+        # The loaded chunk is DIGEST_B; a fresh fetch of the same URL says DIGEST_A.
+        return DIGEST_A if script is not coretax_corporate._BUILD_HASH else DIGEST_B
+
+    page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(),
+            approved_digest=DIGEST_A)
+        assert log.flush()
+
+    assert forms is None
+    events = records(tmp_path)
+    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    assert not [e for e in events if e['event'] == 'build.auto_admitted']
+    assert not isolated_overlay.exists(), 'a mismatched build must not be recorded'
