@@ -4,10 +4,10 @@ import json
 from coretax_json import ORIGIN
 from masa_json_fixtures import FOREIGN, RECORD, TAXPAYER, selected
 
-MAIN = ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
+MAIN = ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js'
 ASSETS = {
-    'PPN': ORIGIN + '/returnsheets/id-ID/640.7ac2145c88285ca5.js',
-    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js',
+    'PPN': ORIGIN + '/returnsheets/id-ID/640.3eca1ab07c0e475b.js',
+    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.e51e1569a060aed7.js',
 }
 BUILD = b'/* synthetic observer build, not portal code */'
 VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'

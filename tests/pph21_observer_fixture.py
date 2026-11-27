@@ -11,8 +11,8 @@ from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import FOREIGN, RECORD, SCOPE, TAXPAYER, selected
 from support_pph21_dom import appendix_table, induk_tables
 
-MAIN = ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
-ARTICLE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
+MAIN = ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js'
+ARTICLE = ORIGIN + '/returnsheets/id-ID/803.144030cf113a3ffb.js'
 BUILD = b'/* synthetic observer build, not portal code */'
 VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 FRAME = ORIGIN + '/returnsheets/id-ID/article-21-26-tax-return/' + TAXPAYER + '/' + RECORD + '/ICT_WIT/00000000-0000-4000-8000-000000000002'
