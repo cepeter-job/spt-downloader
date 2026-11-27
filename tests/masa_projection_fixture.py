@@ -7,12 +7,12 @@ from openpyxl import load_workbook
 from coretax_json import ORIGIN
 from masa_json_fixtures import RECORD, SCOPE, packet, payload, selected
 
-MAIN = ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
+MAIN = ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js'
 BUILDS = {
-    'PPN': {MAIN: '1c22ed2bf02466a71ede7a91f7a5da5677c7bd112f42de1b59ae1eb0c77e2e1b',
-        ORIGIN + '/returnsheets/id-ID/640.7ac2145c88285ca5.js': '90b7e416cb5d19d8f307085c628de52bb186e37f5035bd6cf0cb8f568ea7f197'},
-    'PPh Unifikasi': {MAIN: '1c22ed2bf02466a71ede7a91f7a5da5677c7bd112f42de1b59ae1eb0c77e2e1b',
-        ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js': '95a22f93cdd22483b8a9c83b1e25c0f66b8484612a97b5803a8d14b5c89f8e99'},
+    'PPN': {MAIN: '930c5275e4f33405deb9bcb759e7422cc792b6ffafd2d865ee2f8d2bba881c68',
+        ORIGIN + '/returnsheets/id-ID/640.3eca1ab07c0e475b.js': 'a19546b81e0734196b7f2debd8d0ce9ff425a032d368966bdabefc4ca0788014'},
+    'PPh Unifikasi': {MAIN: '930c5275e4f33405deb9bcb759e7422cc792b6ffafd2d865ee2f8d2bba881c68',
+        ORIGIN + '/returnsheets/id-ID/693.e51e1569a060aed7.js': '3f670242eeda95d10303c5cb096c0f877efe5246896adb45c836507788065fc6'},
 }
 UNIF_HEADERS = ['NO.', 'NIK/NPWP', 'NAMA', 'NOMOR BUKTI POTONG', 'TANGGAL BUKTI POTONG',
     'JENIS PAJAK', 'KODE OBJEK PAJAK', 'OBJEK PAJAK', 'DASAR PENGENAAN PAJAK (Rp)',

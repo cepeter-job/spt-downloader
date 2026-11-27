@@ -1,8 +1,11 @@
-{"version": 1, "digests": {
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.16a01374a2a1ece5.js": "1c22ed2bf02466a71ede7a91f7a5da5677c7bd112f42de1b59ae1eb0c77e2e1b",
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/803.3216dd51e4f24bf3.js": "61f32c60d94ae274d171d7cbf11ecc2d3c1c325765ab011f2be5520bf78c8ade",
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/640.7ac2145c88285ca5.js": "90b7e416cb5d19d8f307085c628de52bb186e37f5035bd6cf0cb8f568ea7f197",
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/693.a011ba093b4bf8b7.js": "95a22f93cdd22483b8a9c83b1e25c0f66b8484612a97b5803a8d14b5c89f8e99",
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/525.c5690c441d8dbc45.js": "fc4d7037e40fc2c7e3dfbba6f196e7146947046f987cf71c7773e6c01d7110d2",
-  "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173"
-}}
+{
+  "digests": {
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/525.4e63a9d496f5561d.js": "0e0dd01d6aac45c4f8fee407550faf445f8c249f864eb6651c87d42b1238349d",
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/640.3eca1ab07c0e475b.js": "a19546b81e0734196b7f2debd8d0ce9ff425a032d368966bdabefc4ca0788014",
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/693.e51e1569a060aed7.js": "3f670242eeda95d10303c5cb096c0f877efe5246896adb45c836507788065fc6",
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/803.144030cf113a3ffb.js": "a8c5dfd95c0336405ba1d20fd5c6e79dbd957295f8cfe69d1f212191f6c09fdc",
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.cc3b47ac53bd3440.js": "930c5275e4f33405deb9bcb759e7422cc792b6ffafd2d865ee2f8d2bba881c68",
+    "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js": "3598ab357518fc6ecf12130803594ef2deb0e4a3adeac40b55bfd7bed487ef11"
+  },
+  "version": 1
+}

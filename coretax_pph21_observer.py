@@ -3,13 +3,13 @@ import re
 
 from spt_desktop import diagnostics
 from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_bindings import MAIN_SOURCE
 from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests,
                                    _reference_order_build)
 
-ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
+ARTICLE_SOURCE = resolve_role_url('l1', ORIGIN + '/returnsheets/id-ID/803.144030cf113a3ffb.js')
 
 def _pph21_pins():
     pins = load_build_pins()

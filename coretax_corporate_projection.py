@@ -17,11 +17,14 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
 from coretax_masa_bindings import _decimal, _number, _evidence
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 
-CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
-VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
+# Resolved through the role so a rotation that renames a chunk is followed
+# without a release; the reviewed default applies until the overlay records
+# a new filename for that role.
+CIT_SOURCE = resolve_role_url('cit', ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js')
+MAIN_SOURCE = resolve_role_url('main', ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js')
+VENDOR_SOURCE = resolve_role_url('vendor', ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js')
 
 def _corporate_pins(urls):
     pins = load_build_pins()

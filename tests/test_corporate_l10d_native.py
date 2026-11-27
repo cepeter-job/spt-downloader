@@ -15,7 +15,7 @@ from test_corporate_l10d_custody import ROOT, CHECKS, DATES, source
 
 DETAIL = FRAME + '?view=true'
 PROVIDERS = tuple(corpus.ORIGIN + '/returnsheets/id-ID/' + name for name in (
-    '525.c5690c441d8dbc45.js', 'main.16a01374a2a1ece5.js', 'vendor.c32c4ee39d966e30.js'))
+    '525.4e63a9d496f5561d.js', 'main.cc3b47ac53bd3440.js', 'vendor.c32c4ee39d966e30.js'))
 
 
 def envelope():

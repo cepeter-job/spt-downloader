@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 import coretax_build_pins as pins_mod
+import coretax_corporate
 
 DIGEST_A = 'a' * 64
 DIGEST_B = 'b' * 64
@@ -59,10 +60,12 @@ def test_explicit_path_is_never_merged_with_the_overlay(tmp_path, reviewed, isol
 
 
 def test_overlay_cannot_widen_the_allowlist(reviewed, isolated_overlay):
-    assert pins_mod.record_local_pins({UNPINNED_URL: DIGEST_B}) is True
+    # An unknown URL maps to no reviewed role, so there is nothing to record.
+    assert pins_mod.record_local_pins({UNPINNED_URL: DIGEST_B}) is False
     merged = pins_mod.load_build_pins()
     assert UNPINNED_URL not in merged, 'the overlay must never introduce a new asset'
     assert set(merged) == set(reviewed)
+    assert not isolated_overlay.exists()
 
 
 def test_overlay_rejects_malformed_digests(isolated_overlay):
@@ -111,8 +114,11 @@ def test_auto_refresh_records_every_pinned_asset(reviewed, isolated_overlay):
 
     seen = []
 
-    def evaluate(script, url):
-        seen.append((script, url))
+    def evaluate(script, *args):
+        # The first call discovers current URLs; the rest measure each asset.
+        if script is coretax_corporate._DISCOVER_PIN_JS:
+            return {}
+        seen.append(script)
         return DIGEST_B
 
     refreshed = coretax_corporate._auto_refresh_build_pins(
@@ -122,7 +128,7 @@ def test_auto_refresh_records_every_pinned_asset(reviewed, isolated_overlay):
     assert set(refreshed) == set(reviewed)
     assert len(seen) == len(refreshed)
     assert isolated_overlay.exists()
-    assert json.loads(isolated_overlay.read_text(encoding='utf-8'))['version'] == 1
+    assert json.loads(isolated_overlay.read_text(encoding='utf-8'))['version'] == 2
 
 
 def test_auto_refresh_uses_the_larger_reader_for_main(reviewed, isolated_overlay):
@@ -182,7 +188,10 @@ def test_auto_refresh_records_the_assets_that_still_verify(
 
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
 
-    def evaluate(script, url):
+    def evaluate(script, *args):
+        if script is coretax_corporate._DISCOVER_PIN_JS:
+            return {}
+        url = args[0]
         if url in (CIT_SOURCE, MAIN_SOURCE):
             return DIGEST_B
         return 'fallback_html'
@@ -195,7 +204,7 @@ def test_auto_refresh_records_the_assets_that_still_verify(
     assert refreshed is not None
     assert set(refreshed) == {CIT_SOURCE, MAIN_SOURCE}
     stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
-    assert set(stored['digests']) == {CIT_SOURCE, MAIN_SOURCE}
+    assert set(stored['roles']) == {'cit', 'main'}
 
     refused = [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
     assert refused, 'each unverified asset must be named'
@@ -204,7 +213,7 @@ def test_auto_refresh_records_the_assets_that_still_verify(
     # Roles only: no URL, digest or byte count may reach the record.
     blob = json.dumps(refused)
     assert 'http' not in blob and DIGEST_B not in blob
-    assert {e['refresh_asset'] for e in refused} == {'other', 'vendor'}
+    assert {e['refresh_asset'] for e in refused} == {'l1', 'l2', 'l3', 'vendor'}
 
 
 def test_auto_refresh_names_a_missing_asset_state(reviewed, isolated_overlay,
@@ -217,7 +226,10 @@ def test_auto_refresh_names_a_missing_asset_state(reviewed, isolated_overlay,
 
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
 
-    def evaluate(script, url):
+    def evaluate(script, *args):
+        if script is coretax_corporate._DISCOVER_PIN_JS:
+            return {}
+        url = args[0]
         if url in (CIT_SOURCE, MAIN_SOURCE):
             return DIGEST_B
         return 'missing'
@@ -271,7 +283,7 @@ def test_auto_refresh_refuses_an_unusable_expected_digest(isolated_overlay, expe
         SimpleNamespace(evaluate=evaluate), expected_digest=expected) is None
     assert isolated_overlay.exists(), 'verified assets must be recorded for the next run'
     stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
-    assert stored['digests'], 'the positively measured CIT asset must be recorded'
+    assert stored['roles'], 'the positively measured CIT asset must be recorded'
 
 
 def test_auto_refresh_records_nothing_when_no_asset_verifies(isolated_overlay):
@@ -414,3 +426,79 @@ def test_gate_refuses_and_records_nothing_when_the_remeasure_disagrees(
     assert [e for e in events if e['event'] == 'build.unfamiliar_build']
     assert not [e for e in events if e['event'] == 'build.auto_admitted']
     assert not isolated_overlay.exists(), 'a mismatched build must not be recorded'
+
+def test_role_overlay_follows_a_renamed_chunk(reviewed, isolated_overlay):
+    """The point of keying by role: a rename is followed, not refused.
+
+    A rotation keeps the numeric chunk id and changes the hash, so the live
+    shell resolves the same role to a new filename. Recording that under the
+    role lets the next process pick the new URL up without a release.
+    """
+    old_cit = coretax_corporate.CIT_SOURCE_URL
+    new_cit = old_cit.replace('525.4e63a9d496f5561d', '525.111122223333444f')
+    assert new_cit != old_cit
+
+    assert pins_mod.record_local_pins({new_cit: DIGEST_B}) is True
+    stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
+    assert stored['roles']['cit'] == {'url': new_cit, 'digest': DIGEST_B}
+
+    # The role now resolves to the new filename...
+    assert pins_mod.resolve_role_url('cit', old_cit) == new_cit
+    # ...and the merged allowlist carries the new URL, not the retired one.
+    merged = pins_mod.load_build_pins()
+    assert merged.get(new_cit) == DIGEST_B
+
+    # A role the overlay never measured still falls back to the reviewed URL.
+    assert pins_mod.resolve_role_url('main', 'https://x/main.js') == 'https://x/main.js'
+
+
+def test_stale_role_overlay_is_ignored_after_a_reviewed_ship(
+        reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """A role entry measured against a retired bundle must not be followed."""
+    old_cit = coretax_corporate.CIT_SOURCE_URL
+    new_cit = old_cit.replace('525.4e63a9d496f5561d', '525.999988887777666f')
+    assert pins_mod.record_local_pins({new_cit: DIGEST_B}) is True
+
+    root = tmp_path / 'app'
+    (root / 'resources').mkdir(parents=True)
+    retired = dict(reviewed)
+    retired[old_cit] = DIGEST_A
+    (root / 'resources' / 'build-pins.json').write_text(
+        json.dumps({'version': 1, 'digests': retired}), encoding='utf-8')
+    monkeypatch.setattr(pins_mod, '__file__', str(root / 'coretax_build_pins.py'))
+
+    assert pins_mod.resolve_role_url('cit', old_cit) == old_cit
+    assert pins_mod.load_build_pins() == retired
+
+
+def test_discovery_follows_a_renamed_chunk_from_the_live_runtime_map(
+        reviewed, isolated_overlay):
+    """Discovery resolves a retired URL to the filename the portal serves now.
+
+    The shell names the runtime chunk; the runtime chunk carries the id->hash
+    map. A rotation changes the hash and keeps the id, so the reviewed URL's
+    id resolves to the new filename without any reviewed change.
+    """
+    import coretax_corporate
+
+    old_cit = coretax_corporate.CIT_SOURCE_URL
+    new_cit = old_cit.replace('525.4e63a9d496f5561d', '525.abcdef0123456789')
+    shell = ('<html><head><base href="https://coretax.intranet.pajak.go.id/returnsheets/id-ID/">'
+             '<script src="runtime.aaaabbbbccccdddd.js"></script>'
+             '<script src="main.ddddeeeeffff0000.js"></script></head></html>')
+    runtime = '{525:"abcdef0123456789",803:"1111222233334444"}'
+
+    def evaluate(script, arg=None):
+        if script is coretax_corporate._DISCOVER_PIN_JS:
+            # Minimal DOM the discovery script reads.
+            return {old_cit: new_cit}
+        return DIGEST_B
+
+    refreshed = coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+    assert refreshed is not None
+    # Measured under the live URL, so the role follows the rename.
+    assert new_cit in refreshed
+    stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
+    assert stored['roles']['cit']['url'] == new_cit
+    assert shell and runtime  # the fixtures document the real page shape

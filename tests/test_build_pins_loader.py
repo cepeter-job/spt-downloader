@@ -55,9 +55,10 @@ def test_overlay_is_stamped_with_the_reviewed_bundle(tmp_path, monkeypatch):
     url = sorted(pins_mod.load_build_pins())[0]
     assert pins_mod.record_local_pins({url: 'b' * 64}) is True
     stored = json.loads(pins_mod.local_pins_path().read_text(encoding='utf-8'))
-    assert stored['version'] == 1
+    assert stored['version'] == 2
     assert stored['base'] == pins_mod._base(pins_mod._reviewed())
-    assert stored['digests'] == {url: 'b' * 64}
+    role = pins_mod.role_for_url(url)
+    assert stored['roles'][role] == {'url': url, 'digest': 'b' * 64}
 
 
 def test_clear_local_pins_removes_the_overlay(tmp_path, monkeypatch):

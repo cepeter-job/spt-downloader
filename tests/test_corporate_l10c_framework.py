@@ -13,7 +13,7 @@ FIXTURE = Path(__file__).parent / 'fixtures' / 'corporate_l10c_framework.js'
 def test_reviewed_provider_excerpt_fixture_has_fixed_pin_and_unchanged_content():
     from coretax_build_pins import load_build_pins
     from coretax_corporate_projection import VENDOR_SOURCE
-    assert load_build_pins().get(VENDOR_SOURCE) == '6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173'
+    assert load_build_pins().get(VENDOR_SOURCE) == '3598ab357518fc6ecf12130803594ef2deb0e4a3adeac40b55bfd7bed487ef11'
     assert hashlib.sha256(FIXTURE.read_text(encoding='utf-8').encode()).hexdigest() == (
         'd38db3f3cef2646e87fc2cb09e1e0ddd4082ed9f68fc4cddb4ead5deee911187')
 

@@ -3,10 +3,13 @@ import json
 import re
 import time
 from time import perf_counter as _paginator_clock
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 from coretax_json import ORIGIN, JsonSafetyError
 
-CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
+# A rotation renames the chunk, so the URL is resolved through the role: the
+# reviewed default is used until the overlay records a new filename for it.
+CIT_SOURCE_URL = resolve_role_url(
+    'cit', ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js')
 CIT_SOURCE_SHA256 = load_build_pins().get(CIT_SOURCE_URL)
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
@@ -77,17 +80,40 @@ _MEASURE_MAIN_PIN_JS = _MEASURE_PIN_JS.replace('4*1024*1024', '5*1024*1024')
 # digest or byte count, which would make the record a source fingerprint.
 _REFRESH_STATES = ('alive', 'missing', 'fallback_html', 'too_large')
 
+# Resolve what the portal currently serves for each pinned asset. A rotation
+# renames the hashed filename but keeps the numeric chunk id, so the reviewed
+# URL's id is looked up in the live webpack map; named chunks (main, vendor)
+# are read straight from the shell's script tags. Returns {reviewed_url:
+# live_url} for the roles it could resolve, so a rename is followed instead of
+# refused. Same-origin only, and never widens the allowlist: the caller still
+# measures and verifies whatever comes back.
+_DISCOVER_PIN_JS = r'''async urls => {
+ const out = {};
+ const base = document.baseURI;
+ const shell = await (await fetch(base, {credentials:'same-origin',cache:'no-store'})).text();
+ const srcs = [...shell.matchAll(/<script[^>]+src="([^"]+)"/g)].map(m => m[1]);
+ const runtime = srcs.find(s => /^runtime\./.test(s));
+ let map = {};
+ if (runtime) {
+   const text = await (await fetch(new URL(runtime, base),
+     {credentials:'same-origin',cache:'no-store'})).text();
+   for (const m of text.matchAll(/(\d{2,4}):"([0-9a-f]{16})"/g)) map[m[1]] = m[2];
+ }
+ for (const url of urls) {
+   const name = url.split('/').pop();
+   const id = (name.match(/^(\d{3,4})\./) || [])[1];
+   if (id && map[id]) { out[url] = new URL(id + '.' + map[id] + '.js', base).href; continue; }
+   const named = srcs.find(s => s.startsWith(name.split('.')[0] + '.'));
+   if (named) out[url] = new URL(named, base).href;
+ }
+ return out;
+}'''
+
 
 def _refresh_asset_role(url):
     """Map a pinned URL to its fixed role, never echoing the URL itself."""
-    from coretax_corporate_projection import MAIN_SOURCE, VENDOR_SOURCE
-    if url == CIT_SOURCE_URL:
-        return 'cit'
-    if url == MAIN_SOURCE:
-        return 'main'
-    if url == VENDOR_SOURCE:
-        return 'vendor'
-    return 'other'
+    from coretax_build_pins import role_for_url
+    return role_for_url(url)
 
 
 def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
@@ -118,19 +144,29 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     pins = load_build_pins()
     if not pins:
         return None
+    # Follow a rename before measuring: the reviewed URL may now serve the SPA
+    # shell, but the same chunk id usually still exists under a new hash.
+    try:
+        discovered = page.evaluate(_DISCOVER_PIN_JS, list(pins)) or {}
+    except Exception:
+        discovered = {}
+    if not isinstance(discovered, dict):
+        discovered = {}
     measured, refused = {}, []
     for url in pins:
         _check_cancel(check_cancel)
+        live = discovered.get(url) or url
         script = _MEASURE_MAIN_PIN_JS if _refresh_asset_role(url) == 'main' else _MEASURE_PIN_JS
         try:
-            result = page.evaluate(script, url)
+            result = page.evaluate(script, live)
         except Exception:
             # A driver/navigation failure is this asset's refusal, not the
             # whole refresh's: the remaining assets still get measured.
             refused.append((url, 'missing'))
             continue
         if isinstance(result, str) and len(result) == 64:
-            measured[url] = result
+            # Recorded under the live URL so the role follows the rename.
+            measured[live] = result
         else:
             refused.append((url, result if result in _REFRESH_STATES else 'missing'))
     _record_refresh_refusals(refused)
@@ -142,10 +178,10 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     if not usable:
         # Persist only a positively measured CIT asset; an unverified build is
         # never recorded as admitted.
-        if measured.get(CIT_SOURCE_URL) is not None:
+        if measured.get(discovered.get(CIT_SOURCE_URL) or CIT_SOURCE_URL) is not None:
             record_local_pins(measured)
         return None
-    if measured.get(CIT_SOURCE_URL) != expected_digest:
+    if measured.get(discovered.get(CIT_SOURCE_URL) or CIT_SOURCE_URL) != expected_digest:
         # A positive mismatch means the page and the server disagree right now,
         # so nothing is persisted: recording it would poison the next run.
         return None
