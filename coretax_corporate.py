@@ -100,25 +100,22 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     pins and store the result in a user-scoped overlay, so a redeploy self-heals.
 
     Only URLs already in the reviewed allowlist are measured and recorded, so
-    this can never widen the allowlist. ``expected_digest`` is mandatory and
-    must be the positive 64-hex digest this page actually loaded: the re-measured
-    CIT asset has to equal it, so an unverified build is never admitted.
+    this can never widen the allowlist.
 
     Assets are measured independently. A retired chunk name that now serves the
     ~8 KB shell no longer aborts the whole refresh: the assets that still verify
-    are recorded, and each refusal is named by fixed role and state. Returns the
-    verified mapping, or None when the CIT asset itself cannot be verified or the
-    overlay cannot be written, and the caller then keeps the fail-closed DOM
-    fallback.
+    are recorded, and each refusal is named by fixed role and state.
+
+    Recording and admission are separate. ``expected_digest`` is the digest the
+    page loaded, or None when it loaded nothing (a renamed chunk the document
+    never referenced). A usable expectation must equal the re-measured CIT asset
+    before the build is admitted; when the expectation is missing the verified
+    assets are still recorded for the next run, but nothing is admitted. Returns
+    the verified mapping when the build is admitted, otherwise None, and the
+    caller then keeps the fail-closed DOM fallback.
     """
     from coretax_build_pins import load_build_pins, record_local_pins
     from coretax_browser import _check_cancel
-    # A missing/unusable loaded digest must never reach the record step: the
-    # caller refuses before calling, and this guard keeps that true for any
-    # future caller. None == None must never admit a build.
-    if (not isinstance(expected_digest, str) or len(expected_digest) != 64
-            or any(c not in '0123456789abcdef' for c in expected_digest)):
-        return None
     pins = load_build_pins()
     if not pins:
         return None
@@ -137,12 +134,24 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
             measured[url] = result
         else:
             refused.append((url, result if result in _REFRESH_STATES else 'missing'))
+    _record_refresh_refusals(refused)
+    # A missing/unusable expectation means this page loaded nothing we can
+    # compare against (a renamed chunk). Record what does verify so the next
+    # run can use it, but never admit: None == None must not admit a build.
+    usable = (isinstance(expected_digest, str) and len(expected_digest) == 64
+              and all(c in '0123456789abcdef' for c in expected_digest))
+    if not usable:
+        # Persist only a positively measured CIT asset; an unverified build is
+        # never recorded as admitted.
+        if measured.get(CIT_SOURCE_URL) is not None:
+            record_local_pins(measured)
+        return None
     if measured.get(CIT_SOURCE_URL) != expected_digest:
-        _record_refresh_refusals(refused)
+        # A positive mismatch means the page and the server disagree right now,
+        # so nothing is persisted: recording it would poison the next run.
         return None
     if not record_local_pins(measured):
         return None
-    _record_refresh_refusals(refused)
     return measured
 
 
@@ -1753,12 +1762,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
             # A redeploy is the common cause, so try to re-measure the pinned
-            # assets from this authenticated page before giving up. The overlay
-            # can only cover URLs the reviewed file already pins, is written only
-            # after the re-measured CIT asset equals the digest this page loaded,
-            # and structural validation below remains the real gate on the build.
-            # A missing/unusable loaded digest never reaches the record step:
-            # _auto_refresh_build_pins requires a positive 64-hex expectation.
+            # assets from this authenticated page before giving up. This runs
+            # when the loaded digest is missing as well as when it mismatches:
+            # a renamed chunk leaves nothing to compare, and the verified
+            # assets are still recorded for the next run. Admission still
+            # requires the re-measured CIT asset to equal a positive 64-hex
+            # digest this page loaded, and structural validation below remains
+            # the real gate on the build.
             refreshed = _auto_refresh_build_pins(page, check_cancel,
                                                  expected_digest=digest)
             if refreshed is None:
