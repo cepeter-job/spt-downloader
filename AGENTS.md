@@ -1563,7 +1563,7 @@ unresolved template fields and independent native/capture/PDF gates are intact.
 Only the existing 250-cap DOM cursor combines global loading-overlay readiness
 and the existing180ms settling interval with its same-owner atomic snapshot.
 Return pending after at most1000ms of renderer waiting for Python Stop checks;
-retain the original45s loading and browser/table deadlines, exact state, Document, URL, rows,
+retain the loading-overlay budget (`TABLE_OVERLAY_TIMEOUT_MS`) and browser/table deadlines, exact state, Document, URL, rows,
 source totals and one click per page. No generic wait or native request changes.
 Renderer snapshot timing excludes this waiting; wall snapshot timing includes it.
 Recheck the original host table deadline after every snapshot reply, before a
