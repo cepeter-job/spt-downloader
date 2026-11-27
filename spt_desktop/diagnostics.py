@@ -42,6 +42,7 @@ EVENTS = frozenset({
     'corporate.l7_negative_gate', 'corporate.l7_capture_gate', 'corporate.l7_history_arm',
     'corporate.l9_detail_gate', 'corporate.l10c_detail_gate',
     'pph21.observer_gate', 'build.unfamiliar_build', 'build.auto_admitted',
+    'build.contract_drift',
     'build.refresh_refused', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
     'table.initial_loading', 'table.reset_timing', 'table.first_page_timing',

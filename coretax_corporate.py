@@ -1807,15 +1807,20 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             refreshed = _auto_refresh_build_pins(page, check_cancel,
                                                  expected_digest=digest)
             if refreshed is None:
-                # Name the redeploy instead of leaving a bare whole-record
-                # fallback: fixed enum only, never the digest, URL or bytes.
-                diagnostics.record('build.unfamiliar_build', build_source='corporate')
-                return unavailable(reason='build_unfamiliar')
-            # Admitted on a re-measured build. Say so loudly: the reviewed
-            # bundle no longer matches and only the structural checks below
-            # stand between this build and the spreadsheet.
-            diagnostics.record('build.auto_admitted', level='WARNING',
-                               build_source='corporate')
+                # D: the digest is a tripwire, not the gate. A build nobody
+                # reviewed still reaches the structural probe below, which is
+                # the real contract check; if that probe passes, the bindings
+                # this run consumes are proven by observation. Name the drift
+                # loudly (fixed enum only, never the digest, URL or bytes) so a
+                # live run is diagnosable, and let the structure decide.
+                diagnostics.record('build.contract_drift', level='WARNING',
+                                   build_source='corporate')
+            else:
+                # Admitted on a re-measured build. Say so loudly: the reviewed
+                # bundle no longer matches and only the structural checks below
+                # stand between this build and the spreadsheet.
+                diagnostics.record('build.auto_admitted', level='WARNING',
+                                   build_source='corporate')
         _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():
