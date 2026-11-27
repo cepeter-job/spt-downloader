@@ -131,3 +131,94 @@ def test_input_handler_cannot_change_the_inspected_login_submission(browser,monk
         assert submitted==[]
         if field=='username':assert p.locator('input[type=password]').input_value()==''
     finally:p.close()
+
+
+
+class _FakePage:
+    """A page that is never authenticated, so the flow reaches manual login."""
+
+    def __init__(self, headless):
+        self.headless = headless
+        self.url = auth().SEARCH_URL
+
+    def goto(self, *a, **k):
+        return None
+
+    def evaluate(self, *a, **k):
+        return False
+
+    def locator(self, *a, **k):
+        raise AssertionError('the fake page must not be inspected')
+
+
+class _FakeContext:
+    def __init__(self, headless):
+        self.headless = headless
+        self.closed = False
+        self.pages = []
+
+    def close(self):
+        self.closed = True
+
+    def new_page(self):
+        return _FakePage(self.headless)
+
+
+class _FakeChromium:
+    """Headless launch fails per ``fail_headless``; visible always succeeds."""
+
+    def __init__(self, fail_headless):
+        self.headless_calls = 0
+        self.fail_headless = fail_headless
+
+    def launch_persistent_context(self, profile, channel=None, headless=True, **k):
+        if headless:
+            self.headless_calls += 1
+            if self.fail_headless(self.headless_calls):
+                raise RuntimeError('synthetic profile lock')
+        return _FakeContext(headless)
+
+
+def _run_auth(monkeypatch, chromium, tmp_path):
+    mod = auth()
+    # The fake page carries no DOM; the flow only needs "not signed in yet".
+    monkeypatch.setattr(mod, 'authenticated', lambda page: False)
+    monkeypatch.setattr(mod, '_at_home', lambda page: False)
+    monkeypatch.setattr(mod, 'try_saved_login', lambda *a, **k: False)
+    monkeypatch.setattr(mod, '_wait_ready', lambda *a, **k: True)
+    monkeypatch.setattr(mod, '_RELAUNCH_BACKOFF', 0)
+    monkeypatch.setattr(mod.time, 'sleep', lambda s: None)
+
+    class _Playwright:
+        pass
+
+    pw = _Playwright()
+    pw.chromium = chromium
+    return mod.authenticate_owned(pw, str(tmp_path), 'msedge', True,
+                                  lambda *a: None, lambda: None, manual_timeout=1)
+
+
+def test_headless_relaunch_retries_then_returns_headless(monkeypatch, tmp_path):
+    """A transient profile-lock race clears on retry; no visible fallback.
+
+    Headless call 1 is the initial launch; calls 2 and 3 are the first two
+    relaunch attempts, which fail, and the third succeeds.
+    """
+    chromium = _FakeChromium(fail_headless=lambda n: n in (2, 3))
+    context, page = _run_auth(monkeypatch, chromium, tmp_path)
+    assert context.headless is True
+    assert chromium.headless_calls == 4
+
+
+def test_headless_relaunch_failure_keeps_the_visible_session(monkeypatch, tmp_path):
+    """A failed headless relaunch must not discard a working manual login.
+
+    Live 27 Nov: the profile had a valid session and the visible context was
+    ready, then relaunching headless on the same persistent profile raised in
+    page.goto and the whole job failed with a bare Error. The visible session
+    is already authenticated, so the job must continue visibly instead.
+    """
+    chromium = _FakeChromium(fail_headless=lambda n: n >= 2)
+    context, page = _run_auth(monkeypatch, chromium, tmp_path)
+    assert context.headless is False
+    assert context.closed is False
