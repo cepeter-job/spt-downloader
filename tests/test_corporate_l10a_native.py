@@ -210,7 +210,7 @@ class Fixture(BaseFixture):
             TypeOfTransaction=None, PricingMethod=None, TransactionValue=None)]
         super().__init__(browser, monkeypatch, defect=defect)
         self.raw = corpus.wire(envelope()).encode()
-        monkeypatch.setattr(projection, 'L10A_BUILD_DIGESTS', dict(self.pins))
+        pin_override(monkeypatch, dict(self.pins))
         monkeypatch.setattr(adapter, 'load_build_pins', lambda: dict(self.pins))
         monkeypatch.setattr(coretax_build_pins, 'load_build_pins', lambda: dict(self.pins))
 

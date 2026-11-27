@@ -10,6 +10,7 @@ import json
 import pytest
 
 import coretax_browser as driver
+from conftest import pin_override
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
 import coretax_json as adapter
@@ -28,7 +29,7 @@ class Fixture(RecapFixture):
     def __init__(self, browser, monkeypatch, urls, *, defect=None):
         self.urls, self.detail_defect = urls, defect
         super().__init__(browser, monkeypatch, natural_refs=list(self.urls.values()))
-        monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', self.pins)
+        pin_override(monkeypatch, self.pins)
         current = corpus.current_form()
         current['MainFormData']['IsMigrated'] = defect == 'migrated'
         current[projection.L9_ROOT] = payload_form(recap())

@@ -78,7 +78,7 @@ class Fixture(BaseFixture):
         self.footer_count = 0
         super().__init__(browser, monkeypatch, model=model, defect=defect)
         self.raw = raw[0]['body']
-        monkeypatch.setattr(projection, 'L3_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
 
     def route(self, route):
         req = route.request

@@ -10,7 +10,7 @@ import support_json_corpus as corpus
 class Fixture(BaseFixture):
     def __init__(self, browser, monkeypatch, *, model='Normal', defect=None):
         super().__init__(browser, monkeypatch, model=model, defect=defect)
-        monkeypatch.setattr(projection, 'L8_BUILD_DIGESTS', dict(self.pins), raising=False)
+        pin_override(monkeypatch, dict(self.pins))
         self.raw = corpus.wire(envelope(model)).encode()
 
     def detail(self):

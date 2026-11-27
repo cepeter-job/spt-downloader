@@ -1,3 +1,4 @@
+from conftest import pin_override
 """L10-A empty-only custody; populated descriptions remain unproved (CI-only)."""
 from copy import deepcopy
 import importlib
@@ -178,7 +179,7 @@ def test_missing_configured_pin_and_missing_observed_digest_do_not_equal_permiss
     marker['builds'][module().CIT_SOURCE] = None
     forms = observed(marker)
     forms[0].pop('projection')  # Isolate L10-A from Induk's separate missing-pin gate.
-    monkeypatch.setattr(module(), 'BUILD_DIGESTS', {})
+    pin_override(monkeypatch, {})
     result = adapt(forms)
     assert not result['eligible'] and 'unverified_corporate_l10a_binding' in result['reason']
 

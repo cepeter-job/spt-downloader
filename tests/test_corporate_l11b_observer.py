@@ -1,3 +1,4 @@
+from conftest import pin_override
 """Source-bound L11-B proof producer; synthetic execution on Actions only."""
 from types import SimpleNamespace
 
@@ -29,7 +30,8 @@ def test_observer_emits_only_exact_two_pin_proof(monkeypatch, defect):
     form = SimpleNamespace(count=lambda: 1, is_visible=lambda: True)
     panel = SimpleNamespace(locator=lambda selector: form)
     monkeypatch.setattr(observer, '_native_panel', lambda *args: panel)
-    pins = dict(projection.BUILD_DIGESTS)
+    # The validator resolves cit+main+vendor, so the override must carry all three.
+    pins = dict(projection.L11B_HYDRATED_BUILD_DIGESTS)
     assets = dict(pins)
     if defect in ('missing-main', 'missing-approved-and-observed-main'):
         assets.pop(projection.MAIN_SOURCE)
@@ -37,7 +39,7 @@ def test_observer_emits_only_exact_two_pin_proof(monkeypatch, defect):
         assets[projection.MAIN_SOURCE] = 'a' * 64
     if defect in ('missing-approved-main', 'missing-approved-and-observed-main'):
         pins.pop(projection.MAIN_SOURCE)
-    monkeypatch.setattr(projection, 'BUILD_DIGESTS', pins)
+    pin_override(monkeypatch, pins)
     probes = []
 
     def evaluate(script, url):

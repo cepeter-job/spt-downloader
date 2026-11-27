@@ -22,7 +22,7 @@ class Fixture(BaseFixture):
         self.reference_raw = {p['context']['url']: p['body'] for p in raw if p['context']['method'] == 'GET'}
         super().__init__(browser, monkeypatch, model=model, defect=defect)
         self.raw = raw[0]['body']
-        monkeypatch.setattr(projection, 'L11A_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
 
     def route(self, route):
         req = route.request

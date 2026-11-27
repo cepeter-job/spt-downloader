@@ -4,6 +4,7 @@ from copy import deepcopy
 import pytest
 
 import coretax_browser as driver
+from conftest import pin_override
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
 import coretax_json as adapter
@@ -52,7 +53,7 @@ def test_observer_only_offers_details_with_positive_pins_sources_and_dependencie
         monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', {**projection.L9_DETAIL_BUILD_DIGESTS,
             projection.VENDOR_SOURCE: None})
     elif defect == 'no-pin':
-        monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', {})
+        pin_override(monkeypatch, {})
     elif defect == 'no-shared-producer':
         monkeypatch.delitem(adapter.CORPORATE_REFERENCE_REQUESTS, urls['TANGIBLE_ASSET'])
     proof = observer._observe_l9(page, object(), Capture(urls, defect),

@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
+from conftest import pin_override
 import coretax_corporate_projection as projection
 from coretax_corporate import observe_forms
 from coretax_json import adapt_corporate_detail, JsonSafetyError
@@ -25,9 +26,9 @@ class Fixture(BaseFixture):
         super().__init__(browser, monkeypatch, defect=defect)
         self.record = selected_hydrated()
         self.raw = primary(populated(**({} if part_ii else {'BorrowingCostExpense': corpus.Number('1')})))['body']
-        monkeypatch.setattr(projection, 'BUILD_DIGESTS', {url: digest for url, digest in self.pins.items()
+        pin_override(monkeypatch, {url: digest for url, digest in self.pins.items()
                                                        if url != projection.VENDOR_SOURCE})
-        monkeypatch.setattr(projection, 'L11B_HYDRATED_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
 
     def detail(self):
         groups = [projection.L11B_GROUPS[i] for i in ((0, 1, 2) if self.part_ii else (2,))]

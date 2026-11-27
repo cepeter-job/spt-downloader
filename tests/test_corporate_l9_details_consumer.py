@@ -190,7 +190,7 @@ def test_details_proof_and_original_custody_refuse_closed_defects(shared_catalog
     if defect in ('main_pin', 'vendor_pin'):
         proof['builds'][projection.MAIN_SOURCE if defect == 'main_pin' else projection.VENDOR_SOURCE] = 'a' * 64
     elif defect == 'missing_configured_pin':
-        monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', {})
+        pin_override(monkeypatch, {})
     elif defect == 'timezone':
         proof['timezone'] = 'UTC'
     elif defect == 'table_owner':

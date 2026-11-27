@@ -1,3 +1,4 @@
+from conftest import pin_override
 """Bounded submitted L11-B View, not the edit-dialog monthly mean (Actions only)."""
 from copy import deepcopy
 from fractions import Fraction
@@ -462,7 +463,7 @@ def test_hydrated_missing_configured_pin_never_matches_missing_provider(monkeypa
     pins = dict(module().L11B_HYDRATED_BUILD_DIGESTS)
     pins[module().VENDOR_SOURCE] = None
     forms[-1]['projection']['builds'][module().VENDOR_SOURCE] = None
-    monkeypatch.setattr(module(), 'L11B_HYDRATED_BUILD_DIGESTS', pins)
+    pin_override(monkeypatch, pins)
     result = adapt(forms=forms, packet=packet())
     assert not result['eligible'] and result['reason'] == 'unverified_corporate_l11b_binding'
 

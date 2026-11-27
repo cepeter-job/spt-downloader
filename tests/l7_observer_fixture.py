@@ -1,3 +1,4 @@
+from conftest import pin_override
 """Same-Document synthetic L7 SPA; no live data or business DOM reads."""
 from copy import deepcopy
 import json
@@ -14,9 +15,9 @@ class Fixture(BaseFixture):
     def __init__(self, browser, monkeypatch, *, defect=None, negative=True, large_main=False, duplicate_rows=False):
         self.large_main = large_main
         super().__init__(browser, monkeypatch, defect=defect)
-        monkeypatch.setattr(projection, 'BUILD_DIGESTS', {url: digest for url, digest in self.pins.items()
+        pin_override(monkeypatch, {url: digest for url, digest in self.pins.items()
                             if url != projection.VENDOR_SOURCE})
-        monkeypatch.setattr(projection, 'L7_NEGATIVE_BUILD_DIGESTS', dict(self.pins))
+        pin_override(monkeypatch, dict(self.pins))
         value = negative_envelope() if negative else envelope()
         if duplicate_rows:
             current = json.loads(value['Payload']['CurrentFormData'], parse_int=corpus.Number, parse_float=corpus.Number)
