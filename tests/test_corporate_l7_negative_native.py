@@ -9,6 +9,7 @@ import coretax_corporate_projection as projection
 import support_json_corpus as corpus
 from test_corporate_l7_native import selected, envelope, bindings, packet, FRAME, PINS
 from test_corporate_l7_projection import ROOT, BODY, SUFFIXES
+from conftest import pin_override
 
 ROUTE = FRAME + '?view=true'
 CHAIN = ['rshshr-corporate-income-tax-return', 'rshshr-citr-l7-form',

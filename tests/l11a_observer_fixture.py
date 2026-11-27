@@ -7,6 +7,7 @@ from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l11a_native import GRIDS, OWNERS, GROUPS, packets, request
 from test_corporate_l11a_projection import HEADERS, CAPTIONS
 import support_json_corpus as corpus
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):

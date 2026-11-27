@@ -10,6 +10,7 @@ import coretax_corporate as observer
 import coretax_corporate_projection as projection
 from spt_desktop import diagnostics
 from test_diagnostics import records
+from conftest import pin_override
 
 EVENT = 'corporate.l7_negative_gate'
 

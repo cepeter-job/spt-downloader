@@ -5,6 +5,7 @@ import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture
 from test_corporate_l8_native import envelope, HEADERS, GROUP
 import support_json_corpus as corpus
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):

@@ -17,6 +17,7 @@ import support_json_corpus as corpus
 from test_corporate_l10a_projection import FRAME, GRID, ROOT, owned, observed, request, row, selected
 from test_corporate_l3_observer import open_selected
 from test_json_hybrid_native import browser as browser
+from conftest import pin_override
 
 KINDS = tuple(projection.L10A_LABELS.values())
 URLS = {kind: adapter.ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind for kind in KINDS}

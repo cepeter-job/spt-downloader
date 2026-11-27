@@ -6,6 +6,7 @@ import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l4_populated_native import GRID, FOOTER, REFS, original_packets
 from test_corporate_l4_projection import request
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):
