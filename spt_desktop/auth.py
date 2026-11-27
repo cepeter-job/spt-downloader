@@ -7,6 +7,10 @@ from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,read_login
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
 HOME_PATH = '/home/id-ID/'
+# Relaunching headless on a persistent profile just after closing the visible
+# context can race the profile lock; a short bounded retry clears it.
+_RELAUNCH_ATTEMPTS = 3
+_RELAUNCH_BACKOFF = 1.5
 
 
 class AuthBlocked(RuntimeError):
@@ -193,12 +197,31 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
         if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel,emit=emit):
             raise AuthBlocked('Login manual belum selesai; tekan Mulai untuk mencoba lagi.')
         if headless:
+            # The visible session is authenticated at this point. Relaunching
+            # headless on the same persistent profile can fail while the
+            # profile is still being released after close, and that used to
+            # abort the whole job and discard a working login. Retry briefly,
+            # then fall back to a visible context rather than failing.
             context.close(); context=None
-            context,page=launch(True)
-            if _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
-            context.close(); context=None
-            context,page=launch(False)
-            emit('login_required','Sesi headless tidak diterima. Lanjutkan login di browser terlihat.')
+            for attempt in range(_RELAUNCH_ATTEMPTS):
+                try:
+                    context,page=launch(True)
+                    break
+                except BaseException:
+                    context=None
+                    if attempt + 1 < _RELAUNCH_ATTEMPTS:
+                        time.sleep(_RELAUNCH_BACKOFF * (attempt + 1))
+            if context is None:
+                diagnostics.record('auth.state', reason='headless_relaunch_failed',
+                                   transport_failure='context_closed')
+                context,page=launch(False)
+                emit('login_required','Sesi headless tidak dapat dibuka; lanjutkan di browser terlihat.')
+            elif _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):
+                return context,page
+            else:
+                context.close(); context=None
+                context,page=launch(False)
+                emit('login_required','Sesi headless tidak diterima. Lanjutkan login di browser terlihat.')
             if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel,emit=emit):
                 raise AuthBlocked('Sesi browser terlihat belum siap.')
         return context,page

@@ -278,6 +278,7 @@ ENUMS = {
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened',
         'active', 'unknown', 'global_recovery', 'deadline', 'seal_or_recovery',
         'no_terminal', 'wrong_status', 'recovery', 'changed', 'error',
+        'headless_relaunch_failed',
         'disabled', 'removed', 'no_candidates',
         'no_eligible_candidates', 'verification_failed'}),
 }
