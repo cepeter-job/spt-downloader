@@ -26,6 +26,8 @@ def origin(tmp_path):
     serve.mkdir()
     (serve / 'small.js').write_bytes(SMALL)
     (serve / 'main.js').write_bytes(BIG)
+    # A retired chunk name serves the SPA shell: 2xx, but text/html.
+    (serve / 'shell').write_bytes(b'<!doctype html><title>shell</title>')
     handler = functools.partial(http.server.SimpleHTTPRequestHandler,
                                 directory=str(serve))
     httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
@@ -59,5 +61,31 @@ def test_over_four_mib_asset_needs_the_main_reader(origin, browser):
         refused = page.evaluate(coretax_corporate._MEASURE_PIN_JS, origin + '/main.js')
         measured = page.evaluate(coretax_corporate._MEASURE_MAIN_PIN_JS,
                                  origin + '/main.js')
-    assert refused is None, 'the default reader must keep its 4 MiB bound'
+    assert refused == 'too_large', 'the default reader must keep its 4 MiB bound'
     assert isinstance(measured, str) and len(measured) == 64
+
+
+def test_retired_chunk_name_is_named_fallback_html(origin, browser):
+    """A 2xx non-JS body is the retired-chunk shell, and must say so.
+
+    This is the live 27 Nov case: the portal rolled new chunk names, so the
+    pinned URL serves the SPA shell instead of a script.
+    """
+    import coretax_corporate
+
+    with isolated_context(browser) as context:
+        page = context.new_page()
+        page.goto(origin + '/small.js')
+        state = page.evaluate(coretax_corporate._MEASURE_PIN_JS, origin + '/shell')
+    assert state == 'fallback_html'
+
+
+def test_absent_asset_is_named_missing(origin, browser):
+    """A non-2xx asset is 'missing', distinct from the retired-chunk shell."""
+    import coretax_corporate
+
+    with isolated_context(browser) as context:
+        page = context.new_page()
+        page.goto(origin + '/small.js')
+        state = page.evaluate(coretax_corporate._MEASURE_PIN_JS, origin + '/absent.js')
+    assert state == 'missing'

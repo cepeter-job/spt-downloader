@@ -145,11 +145,11 @@ def test_auto_refresh_uses_the_larger_reader_for_main(reviewed, isolated_overlay
             assert script is coretax_corporate._MEASURE_PIN_JS
 
 
-def test_auto_refresh_refuses_when_any_asset_cannot_be_measured(isolated_overlay):
+def test_auto_refresh_refuses_when_no_asset_can_be_measured(isolated_overlay):
     import coretax_corporate
 
     def evaluate(script, url):
-        return None
+        return 'missing'
 
     assert coretax_corporate._auto_refresh_build_pins(
         SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B) is None
@@ -167,14 +167,100 @@ def test_auto_refresh_refuses_when_the_page_raises(isolated_overlay):
     assert not isolated_overlay.exists()
 
 
+def test_auto_refresh_records_the_assets_that_still_verify(
+        reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """A retired chunk name must not abort the whole refresh.
+
+    This is the live 27 Nov case: the portal rolled new chunk names, so the
+    pinned non-CIT assets serve the ~8 KB shell. The assets that still verify
+    must be recorded, and each refusal named by fixed role and state.
+    """
+    import coretax_corporate
+    from coretax_corporate_projection import CIT_SOURCE, MAIN_SOURCE
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        if url in (CIT_SOURCE, MAIN_SOURCE):
+            return DIGEST_B
+        return 'fallback_html'
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        refreshed = coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    assert refreshed is not None
+    assert set(refreshed) == {CIT_SOURCE, MAIN_SOURCE}
+    stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
+    assert set(stored['digests']) == {CIT_SOURCE, MAIN_SOURCE}
+
+    refused = [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
+    assert refused, 'each unverified asset must be named'
+    assert all(e['build_source'] == 'corporate' for e in refused)
+    assert {e['refresh_asset_state'] for e in refused} == {'fallback_html'}
+    # Roles only: no URL, digest or byte count may reach the record.
+    blob = json.dumps(refused)
+    assert 'http' not in blob and DIGEST_B not in blob
+    assert {e['refresh_asset'] for e in refused} == {'other', 'vendor'}
+
+
+def test_auto_refresh_names_a_missing_asset_state(reviewed, isolated_overlay,
+                                                  monkeypatch, tmp_path):
+    """A non-2xx asset is reported as 'missing', not as a bare refusal."""
+    import coretax_corporate
+    from coretax_corporate_projection import CIT_SOURCE, MAIN_SOURCE
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        if url in (CIT_SOURCE, MAIN_SOURCE):
+            return DIGEST_B
+        return 'missing'
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    refused = [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
+    assert {e['refresh_asset_state'] for e in refused} == {'missing'}
+
+
+def test_auto_refresh_emits_no_refusal_when_every_asset_verifies(
+        reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """The healthy path stays silent: no spurious WARNING on a good build."""
+    import coretax_corporate
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        return DIGEST_B
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    assert not [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
+
+
 @pytest.mark.parametrize('expected', [None, '', 'not-a-digest', DIGEST_B.upper(),
                                       DIGEST_B[:-1]])
 def test_auto_refresh_refuses_an_unusable_expected_digest(isolated_overlay, expected):
-    """A missing/unusable loaded digest must never reach the record step.
+    """A missing/unusable loaded digest must never admit a build.
 
     The gate passes the digest the page actually loaded. When that is None the
     re-measured CIT asset would otherwise compare equal to nothing and the
-    overlay would be written for a build nobody verified (None == None).
+    build would be admitted with no evidence at all (None == None). Admission
+    is refused; the positively measured assets are still recorded so the next
+    run can use them.
     """
     import coretax_corporate
 
@@ -183,7 +269,61 @@ def test_auto_refresh_refuses_an_unusable_expected_digest(isolated_overlay, expe
 
     assert coretax_corporate._auto_refresh_build_pins(
         SimpleNamespace(evaluate=evaluate), expected_digest=expected) is None
+    assert isolated_overlay.exists(), 'verified assets must be recorded for the next run'
+    stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
+    assert stored['digests'], 'the positively measured CIT asset must be recorded'
+
+
+def test_auto_refresh_records_nothing_when_no_asset_verifies(isolated_overlay):
+    """Nothing measured means nothing to record, and no admission."""
+    import coretax_corporate
+
+    def evaluate(script, url):
+        return 'fallback_html'
+
+    assert coretax_corporate._auto_refresh_build_pins(
+        SimpleNamespace(evaluate=evaluate), expected_digest=None) is None
     assert not isolated_overlay.exists(), 'an unverified build must not be persisted'
+
+
+def test_gate_records_the_overlay_when_the_loaded_digest_is_missing(
+        monkeypatch, tmp_path, isolated_overlay):
+    """A renamed chunk leaves no loaded digest; the run must still self-heal.
+
+    This is the live 27 Nov case: the pinned CIT URL is a retired name the
+    document never referenced, so the gate's loaded digest is None. The refresh
+    must still run, record what verifies, and refuse admission for this run.
+    """
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+
+    def evaluate(script, *args):
+        # Nothing loaded for the pinned CIT URL; a fresh fetch still verifies.
+        return None if script is coretax_corporate._BUILD_HASH else DIGEST_B
+
+    page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(),
+            approved_digest=DIGEST_A)
+        assert log.flush()
+
+    assert forms is None
+    events = records(tmp_path)
+    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    assert not [e for e in events if e['event'] == 'build.auto_admitted']
+    assert isolated_overlay.exists(), 'the verified assets must be recorded for the next run'
 
 
 def test_auto_refresh_does_not_record_a_mismatched_cit_asset(reviewed, isolated_overlay):
@@ -223,7 +363,7 @@ def test_gate_auto_admits_on_drift_and_emits_diagnostic(
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
 
     def evaluate(script, *args):
-        return DIGEST_B  # the redeployed build
+        return DIGEST_B  # the redeployed build, every asset verifies
 
     page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}

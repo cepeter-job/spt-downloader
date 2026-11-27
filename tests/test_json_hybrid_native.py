@@ -73,6 +73,12 @@ class NativeFixture:
                         RecapitulationFiscalDepreciationAmortization=[], DeclarationTransactionRelatedParties=[])
         self.raw = corpus.primary(form)['body']
         self.build = BUILD + (b'/* CHANGED */' if changed_build else b'')
+        self.changed_build = changed_build
+        self.asset_requests = 0
+        # The reviewed pin is the pristine BUILD, so a changed build makes the
+        # page's loaded digest differ from the reviewed pin and the gate must
+        # re-measure. The re-measurement is served the pristine bytes, so it
+        # disagrees with what the page loaded and the build stays fail-closed.
         monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', hashlib.sha256(BUILD).hexdigest(), raising=False)
         if groups:
             import coretax_corporate_projection as projection
@@ -92,7 +98,17 @@ class NativeFixture:
         elif url == corpus.FRAME_URL:
             route.fulfill(content_type='text/html', body=self.detail_html())
         elif url == ASSET:
-            route.fulfill(content_type='application/javascript', body=self.build)
+            # The document load and the gate's own hash fetch both hit this URL
+            # before any re-measurement. With changed_build those first two
+            # requests serve the changed bytes, so the gate sees drift; the
+            # re-measurement that follows is served the pristine reviewed build,
+            # so it disagrees with what the page loaded and the build stays
+            # fail-closed.
+            if self.changed_build and self.asset_requests < 2:
+                self.asset_requests += 1
+                route.fulfill(content_type='application/javascript', body=self.build)
+            else:
+                route.fulfill(content_type='application/javascript', body=BUILD)
         elif url == corpus.ORIGIN + '/returnsheet/api/returnsheetssubmitted':
             assert request.method == 'POST'
             route.fulfill(content_type='application/json', body=json.dumps({

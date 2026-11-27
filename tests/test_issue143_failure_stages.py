@@ -93,8 +93,9 @@ def test_corporate_build_gate_refuses_when_nothing_loaded_and_fetch_succeeds(
 
     The gate passes the loaded digest as the refresh expectation. When that
     digest is None but a fresh fetch of the same URL succeeds, a loose
-    ``expected_digest is not None`` guard would skip the comparison and record
-    an overlay for a build nobody verified (None == None). The gate must refuse.
+    ``expected_digest is not None`` guard would skip the comparison and admit
+    a build nobody verified (None == None). The gate must refuse -- while still
+    recording the verified assets so the next run can self-heal.
     """
     import coretax_browser
     import coretax_corporate
@@ -126,7 +127,8 @@ def test_corporate_build_gate_refuses_when_nothing_loaded_and_fetch_succeeds(
     events = records(tmp_path)
     assert [e for e in events if e['event'] == 'build.unfamiliar_build']
     assert not [e for e in events if e['event'] == 'build.auto_admitted']
-    assert not (tmp_path / 'local' / 'SPTDownloader' / 'build-pins.local.json').exists()
+    # Refused for this run, but the verified assets are recorded for the next.
+    assert (tmp_path / 'local' / 'SPTDownloader' / 'build-pins.local.json').exists()
 
 
 def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeypatch, tmp_path):
