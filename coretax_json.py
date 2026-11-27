@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 from coretax_detail_source import validate_detail_source as validate_detail_source
 
 
@@ -50,11 +50,12 @@ CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/i
     'DEDUCTION_METHOD,TYPE_OF_FULFILLMENT'] = ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
                                   for index in (1, 2, 3, 5))
-REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
+REFERENCE_ORDER_SOURCE = resolve_role_url('vendor', ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js')
 REFERENCE_ORDER_SHA256 = load_build_pins().get(REFERENCE_ORDER_SOURCE)
 CORPORATE_REFERENCE_SOURCES = (
-    ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js',
-    ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js', REFERENCE_ORDER_SOURCE)
+    resolve_role_url('cit', ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js'),
+    resolve_role_url('main', ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js'),
+    REFERENCE_ORDER_SOURCE)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',

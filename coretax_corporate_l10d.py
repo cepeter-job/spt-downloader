@@ -6,12 +6,14 @@ cannot enable a native capture or a worksheet by itself.
 from datetime import date
 import re
 
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 from coretax_json import (ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata,
                           _capture_component_lifetime)
 
-PROVIDERS = tuple(ORIGIN + '/returnsheets/id-ID/' + name for name in (
-    '525.c5690c441d8dbc45.js', 'main.16a01374a2a1ece5.js', 'vendor.c32c4ee39d966e30.js'))
+PROVIDERS = tuple(resolve_role_url(role, ORIGIN + '/returnsheets/id-ID/' + name)
+                  for role, name in (('cit', '525.4e63a9d496f5561d.js'),
+                                     ('main', 'main.cc3b47ac53bd3440.js'),
+                                     ('vendor', 'vendor.c32c4ee39d966e30.js')))
 KIND = 'corporate-l10d-originals-v1'
 FLAG = 'IsObligationTransferPricing'
 FINAL_CUSTODY_BLOCKER = 'unverified_corporate_l10d_final_selection_custody'

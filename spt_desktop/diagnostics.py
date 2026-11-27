@@ -246,7 +246,7 @@ ENUMS = {
         'catalog', 'evaluation_error'}),
     'build_source': frozenset({'main', 'article', 'ppn_chunk', 'unifikasi_chunk',
                                'corporate', 'vendor', 'pdf_guard'}),
-    'refresh_asset': frozenset({'cit', 'main', 'vendor', 'other'}),
+    'refresh_asset': frozenset({'cit', 'main', 'vendor', 'l1', 'l2', 'l3', 'other'}),
     'refresh_asset_state': frozenset({'alive', 'missing', 'fallback_html',
                                       'too_large'}),
     'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),

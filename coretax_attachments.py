@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
-from coretax_build_pins import load_build_pins
+from coretax_build_pins import load_build_pins, resolve_role_url
 from coretax_exporter import FINANCIAL_LABELS
 from coretax_financial_post import FinancialPost, verify_sources
 from spt_desktop.output_windows import DirectoryGuard, locked_file
@@ -20,8 +20,9 @@ MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
 _LABELS = FINANCIAL_LABELS
 
-_PDF_PIN_PATHS = ('/returnsheets/id-ID/525.c5690c441d8dbc45.js',
-                  '/returnsheets/id-ID/main.16a01374a2a1ece5.js')
+_PDF_PIN_PATHS = tuple(urlparse(resolve_role_url(role, 'https://coretax.intranet.pajak.go.id' + path)).path
+                       for role, path in (('cit', '/returnsheets/id-ID/525.4e63a9d496f5561d.js'),
+                                          ('main', '/returnsheets/id-ID/main.cc3b47ac53bd3440.js')))
 
 def _pdf_source_pins():
     pins = load_build_pins()

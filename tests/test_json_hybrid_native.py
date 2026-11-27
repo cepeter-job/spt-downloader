@@ -14,11 +14,12 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
+import coretax_corporate
 from coretax_build_pins import load_build_pins
 import support_json_corpus as corpus
 import support_financial_browser as financial
 
-ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
+ASSET = coretax_corporate.CIT_SOURCE_URL
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'
 # Every asset the reviewed bundle pins. On drift the build gate re-measures all
 # of them, so a probe is expected traffic rather than a surprise request.
