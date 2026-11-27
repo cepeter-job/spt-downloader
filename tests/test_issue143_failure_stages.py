@@ -28,7 +28,7 @@ def _build_gate_page(observed, measurable=None):
     return SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
 
 
-@pytest.mark.parametrize('stage', ['build', 'tabs'])
+@pytest.mark.parametrize('stage', ['tabs'])
 def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tmp_path, stage):
     import coretax_browser
     import coretax_corporate
@@ -44,7 +44,7 @@ def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tm
                             lambda page: (object(), SimpleNamespace(count=lambda: 0)))
     page = _build_gate_page('c' * 64)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
-    approved = 'd' * 64 if stage == 'build' else 'c' * 64
+    approved = 'c' * 64
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
             page, record, ('synthetic', 2025, 'period'), object(), approved_digest=approved)
@@ -57,10 +57,12 @@ def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tm
 
 
 @pytest.mark.parametrize('observed,approved,expected', [
-    (None, None, 'build'),
-    (None, 'a' * 64, 'build'),
-    ('a' * 64, None, 'build'),
-    ('a' * 64, 'b' * 64, 'build'),
+    # D: a digest that is missing or mismatched is a tripwire, not the gate.
+    # The run continues to the structural probe, which is what refuses here.
+    (None, None, 'tabs'),
+    (None, 'a' * 64, 'tabs'),
+    ('a' * 64, None, 'tabs'),
+    ('a' * 64, 'b' * 64, 'tabs'),
     ('a' * 64, 'a' * 64, 'tabs'),
 ])
 def test_corporate_build_gate_never_admits_missing_or_mismatched_digests(
@@ -125,9 +127,13 @@ def test_corporate_build_gate_refuses_when_nothing_loaded_and_fetch_succeeds(
 
     assert forms is None
     events = records(tmp_path)
-    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    # D: the missing digest is a tripwire, so the drift is named and the
+    # structural probe (empty tab list) is what refuses.
+    assert [e for e in events if e['event'] == 'build.contract_drift']
     assert not [e for e in events if e['event'] == 'build.auto_admitted']
-    # Refused for this run, but the verified assets are recorded for the next.
+    unavailable, = [e for e in events if e['event'] == 'corporate.observe_unavailable']
+    assert unavailable['corporate_observer_stage'] == 'tabs'
+    # The verified assets are still recorded for the next run.
     assert (tmp_path / 'local' / 'SPTDownloader' / 'build-pins.local.json').exists()
 
 
@@ -163,14 +169,15 @@ def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeyp
     (None, 'a' * 64),       # live digest unreadable
     ('a' * 64, None),       # reviewed pin absent
 ])
-def test_corporate_build_mismatch_names_gate_and_emits_unfamiliar_build(
+def test_corporate_build_mismatch_names_admission_and_lets_structure_decide(
         monkeypatch, tmp_path, observed, approved):
     """A corporate build mismatch must name itself, not return a bare refusal.
 
     The corporate observer previously collapsed every refusal into one silent
     ``unavailable()``, so a redeployed frontend and a structural gate were
-    indistinguishable without a live CDP session. The build gate must emit the
-    privacy-safe ``build.unfamiliar_build`` diagnostic and a fixed reason enum.
+    indistinguishable without a live CDP session. Under D the digest is a
+    tripwire: the drift is reported as ``build.contract_drift`` and the
+    structural probe below decides admission.
     """
     import coretax_browser
     import coretax_corporate
@@ -191,16 +198,18 @@ def test_corporate_build_mismatch_names_gate_and_emits_unfamiliar_build(
         assert log.flush()
     assert forms is None
     events = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_unavailable']
-    assert len(events) == 1 and events[0]['corporate_observer_stage'] == 'build'
-    assert events[0].get('corporate_refusal_reason') == 'build_unfamiliar'
-    # The live build must be reported as unfamiliar, with the fixed enum only.
-    unfamiliar, = [e for e in records(tmp_path) if e['event'] == 'build.unfamiliar_build']
-    assert unfamiliar['build_source'] == 'corporate'
+    # The digest no longer refuses on its own: the structural probe decides.
+    assert len(events) == 1 and events[0]['corporate_observer_stage'] == 'tabs'
+    # The drift is named either way, with the fixed enum only: a re-measured
+    # build is admitted, and one that cannot be re-measured is a tripwire.
+    named = [e for e in records(tmp_path)
+             if e['event'] in ('build.auto_admitted', 'build.contract_drift')]
+    assert len(named) == 1 and named[0]['build_source'] == 'corporate'
     # Privacy: never the digest, URL or record identity.
-    assert 'SYNTHETIC-ID' not in json.dumps(events + [unfamiliar])
+    assert 'SYNTHETIC-ID' not in json.dumps(events + named)
 
 
-def test_corporate_unfamiliar_build_carries_only_fixed_enums(monkeypatch, tmp_path):
+def test_corporate_contract_drift_carries_only_fixed_enums(monkeypatch, tmp_path):
     """The diagnostic is bounded: a fixed source enum, never values or URLs."""
     import coretax_browser
     import coretax_corporate
@@ -213,15 +222,20 @@ def test_corporate_unfamiliar_build_carries_only_fixed_enums(monkeypatch, tmp_pa
     monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
     monkeypatch.setattr(coretax_corporate, '_tabs',
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
-    page = _build_gate_page('a' * 64)
+    # A page whose assets cannot be re-measured is the drift path: the digest
+    # is a tripwire, so the run continues to the structural probe.
+    def evaluate(script, *args):
+        return 'a' * 64 if script is coretax_corporate._BUILD_HASH else 'fallback_html'
+
+    page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
             page, record, ('synthetic', 2025, 'period'), object(), approved_digest='b' * 64)
         assert log.flush()
     assert forms is None
-    unfamiliar, = [e for e in records(tmp_path) if e['event'] == 'build.unfamiliar_build']
-    assert unfamiliar['build_source'] == 'corporate'
+    drift, = [e for e in records(tmp_path) if e['event'] == 'build.contract_drift']
+    assert drift['build_source'] == 'corporate'
     # Bounded: only the fixed source enum plus optional byte count; never a
     # digest, URL, tab caption or record identity.
     allowed = {
@@ -229,9 +243,9 @@ def test_corporate_unfamiliar_build_carries_only_fixed_enums(monkeypatch, tmp_pa
         'elapsed_ms', 'python', 'frozen', 'build_source', 'observed_bytes',
         'source_requested', 'tax_kind', 'build_commit', 'build_run_id',
         'build_run_attempt', 'job_ref'}
-    assert set(unfamiliar) <= allowed
-    if 'observed_bytes' in unfamiliar:
-        assert type(unfamiliar['observed_bytes']) is int
+    assert set(drift) <= allowed
+    if 'observed_bytes' in drift:
+        assert type(drift['observed_bytes']) is int
 
 
 @pytest.mark.parametrize('phase', ['session', 'open', 'parent_inventory', 'final_drain'])

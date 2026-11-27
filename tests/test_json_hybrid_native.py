@@ -355,13 +355,22 @@ def test_missing_declared_root_or_unknown_visible_form_uses_whole_dom(browser, t
         fixture.close()
 
 
-def test_changed_public_source_bytes_reject_catalog_and_fall_back_whole_dom(browser, tmp_path, monkeypatch):
+def test_changed_public_source_bytes_admit_only_a_complete_contract(browser, tmp_path, monkeypatch):
+    """D: changed bytes are a tripwire, but only a complete record is admitted.
+
+    The digest no longer refuses on its own; the completeness contract decides.
+    This fixture declares only Induk and the projection delivers it, so the
+    contract holds and native is used. The old assertion here was a DOM-only
+    input value (0000777), which the native path never reads.
+    """
     native_collector()
     fixture = NativeFixture(browser, tmp_path, monkeypatch, changed_build=True)
     try:
         result = fixture.collect()
-        assert result['complete'] is True and result['records'][0]['detail_source']['used'] == 'dom'
-        assert any(f.get('value') == '0000777' for s in result['records'][0]['sections'] for f in s.get('fields', []))
+        record = result['records'][0]
+        assert result['complete'] is True
+        assert record['detail_source']['used'] == 'json'
+        assert [s['name'] for s in record['sections']] == ['Induk']
         assert fixture.unexpected == []
     finally:
         fixture.close()
@@ -469,3 +478,41 @@ def test_approved_native_build_missing_grid_identity_uses_whole_dom(
         assert fixture.unexpected == []
     finally:
         fixture.close()
+
+
+def test_corporate_contract_rejects_a_record_narrower_than_the_observed_forms():
+    """The fail-open D must not reintroduce: presence is not completeness.
+
+    A build nobody reviewed can satisfy the structural probe and still project
+    fewer sections than the observed forms declare. That record is marked
+    complete and carries less than the DOM fallback, so the contract refuses it.
+    """
+    from coretax_browser import _corporate_contract_complete
+
+    forms = [{'name': 'Induk'}, {'name': 'L1-B'}, {'name': 'L3'}]
+    narrow = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]}]}
+    assert _corporate_contract_complete(forms=forms, decoded=narrow) is False
+
+    full = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]},
+                         {'name': 'L1-B', 'fields': []},
+                         {'name': 'L3', 'fields': []}]}
+    assert _corporate_contract_complete(forms=forms, decoded=full) is True
+
+
+def test_corporate_contract_ignores_disabled_and_undisplayed_forms():
+    """Disabled tabs bind nothing and L10-B/L10-D are never displayed."""
+    from coretax_browser import _corporate_contract_complete
+
+    forms = [{'name': 'Induk'}, {'name': 'L1-B', 'disabled': True},
+             {'name': 'L10-B'}, {'name': 'L10-D'}]
+    decoded = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]}]}
+    assert _corporate_contract_complete(forms=forms, decoded=decoded) is True
+
+
+def test_corporate_contract_requires_a_bound_induk_value():
+    """An Induk with no value at all is not a complete record."""
+    from coretax_browser import _corporate_contract_complete
+
+    forms = [{'name': 'Induk'}]
+    empty = {'sections': [{'name': 'Induk', 'fields': [{'value': None}]}]}
+    assert _corporate_contract_complete(forms=forms, decoded=empty) is False

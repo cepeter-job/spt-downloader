@@ -1611,6 +1611,33 @@ def _capture_failure_message(error):
     return 'capture_failed'
 
 
+def _corporate_contract_complete(*, forms, decoded):
+    """D: presence is not completeness.
+
+    An unreviewed build can satisfy the structural probe -- a form root and a
+    few fields exist -- while projecting fewer sections than the observed forms
+    declare. That is a fail-open: the record is marked complete and carries
+    less than the DOM fallback would have. Require every observed form to be
+    projected, and the Induk to carry at least one bound value, so a narrower
+    native record falls back to DOM instead of being admitted.
+    """
+    sections = [s for s in ((decoded or {}).get('sections') or []) if isinstance(s, dict)]
+    projected = {s.get('name') for s in sections}
+    # Disabled tabs bind nothing, and L10-B/L10-D are never displayed, so
+    # neither can be part of what the projection owes the record.
+    excluded = {'L10-B', 'L10-D'}
+    declared = {f.get('name') for f in (forms or [])
+                if isinstance(f, dict) and f.get('name')
+                and not f.get('disabled') and f.get('name') not in excluded}
+    if not declared or not declared <= projected:
+        return False
+    induk = next((s for s in sections if s.get('name') == 'Induk'), None)
+    if induk is None:
+        return False
+    return any(isinstance(f, dict) and f.get('value') not in (None, '')
+               for f in (induk.get('fields') or []))
+
+
 def _detail_source_reason(*, eligible, corporate, masa, forms, manifest, decoded, projection_complete):
     """Classify why the native JSON source was or was not used.
 
@@ -3011,6 +3038,12 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         projection_complete = not has_audit_dump_tables(
             (decoded or {}).get('sections') or (), provenance=(decoded or {}).get('provenance'))
         if not projection_complete:
+            eligible = False
+        # D: the contract must hold, not merely the structure. A build nobody
+        # reviewed can satisfy the structural probe and still project fewer
+        # sections than the observed forms declare; that is a fail-open, so it
+        # falls back to DOM instead of being admitted.
+        if eligible and not _corporate_contract_complete(forms=forms, decoded=decoded):
             eligible = False
     source_reason = _detail_source_reason(eligible=eligible, corporate=corporate, masa=masa,
                                           forms=forms, manifest=manifest, decoded=decoded,

@@ -333,7 +333,7 @@ def test_gate_records_the_overlay_when_the_loaded_digest_is_missing(
 
     assert forms is None
     events = records(tmp_path)
-    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    assert [e for e in events if e['event'] == 'build.contract_drift']
     assert not [e for e in events if e['event'] == 'build.auto_admitted']
     assert isolated_overlay.exists(), 'the verified assets must be recorded for the next run'
 
@@ -423,7 +423,7 @@ def test_gate_refuses_and_records_nothing_when_the_remeasure_disagrees(
 
     assert forms is None
     events = records(tmp_path)
-    assert [e for e in events if e['event'] == 'build.unfamiliar_build']
+    assert [e for e in events if e['event'] == 'build.contract_drift']
     assert not [e for e in events if e['event'] == 'build.auto_admitted']
     assert not isolated_overlay.exists(), 'a mismatched build must not be recorded'
 
