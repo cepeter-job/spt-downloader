@@ -2128,7 +2128,20 @@ def _restore_list_response(page, observer, source_url, taxpayer_id, check_cancel
             verify_owner()
         observer.begin_navigation(source_url)
         before = observer.sequence
-        page.goto(source_url, wait_until='domcontentloaded', timeout=60000)
+        try:
+            page.goto(source_url, wait_until='domcontentloaded', timeout=60000)
+        except Exception:
+            # A navigation that never lands (timeout, abort, connection reset)
+            # is as transient as an absent list response, and used to cost the
+            # whole record on the first attempt. Retry once. Only goto is
+            # guarded: a failure from observer.wait is a terminal response
+            # failure and must keep its original handling, and cancellation or
+            # a changed owner must surface instead of being retried.
+            _check_cancel(check_cancel)
+            verify_owner()
+            if attempt:
+                raise
+            continue
         verify_owner()
         try:
             return observer.wait(before)

@@ -70,3 +70,70 @@ def test_real_list_restoration_keeps_owned_requests_and_terminal_failures(contex
         if case in ('http403', 'application_error'):
             assert any('unsuccessful' in str(error) for error in failures)
             assert result['errors'][0]['message'] == 'capture_failed'
+
+
+class _FakePage:
+    """A page whose first navigation fails, like the live 53s goto abort."""
+
+    def __init__(self, url, fail_times=1):
+        self.url = url
+        self.goto_calls = 0
+        self.fail_times = fail_times
+
+    def goto(self, url, **kwargs):
+        self.goto_calls += 1
+        if self.goto_calls <= self.fail_times:
+            raise RuntimeError('synthetic navigation aborted')
+
+
+class _FakeObserver:
+    sequence = 0
+
+    def begin_navigation(self, url):
+        return None
+
+    def wait(self, before):
+        return {'rows': ['synthetic']}
+
+
+_LIST_URL = ('https://coretax.intranet.pajak.go.id/returnsheets/id-ID/'
+             'submitted-returnsheets/SYNTHETIC-TAXPAYER')
+
+
+def test_list_restore_retries_a_navigation_that_never_lands(monkeypatch):
+    """A goto that aborts is retried once instead of losing the record.
+
+    Live 27 Nov: the second record's list restore died on page.goto after 53s
+    and the return was published empty, because only ListResponseTimeout was
+    retried.
+    """
+    monkeypatch.setattr(driver, 'list_taxpayer_id', lambda url: 'SYNTHETIC-TAXPAYER')
+    page = _FakePage(_LIST_URL, fail_times=1)
+    result = driver._restore_list_response(page, _FakeObserver(), _LIST_URL,
+                                           'SYNTHETIC-TAXPAYER')
+    assert page.goto_calls == 2
+    assert result == {'rows': ['synthetic']}
+
+
+def test_list_restore_still_raises_when_the_retry_also_fails(monkeypatch):
+    """A persistent navigation failure must not be swallowed."""
+    monkeypatch.setattr(driver, 'list_taxpayer_id', lambda url: 'SYNTHETIC-TAXPAYER')
+    page = _FakePage(_LIST_URL, fail_times=99)
+    with pytest.raises(RuntimeError):
+        driver._restore_list_response(page, _FakeObserver(), _LIST_URL,
+                                      'SYNTHETIC-TAXPAYER')
+    assert page.goto_calls == 2
+
+
+def test_list_restore_does_not_retry_a_cancelled_capture(monkeypatch):
+    """Stop must surface immediately, never be retried as a transient error."""
+    monkeypatch.setattr(driver, 'list_taxpayer_id', lambda url: 'SYNTHETIC-TAXPAYER')
+    page = _FakePage(_LIST_URL, fail_times=99)
+
+    def cancel():
+        raise driver.CaptureCancelled()
+
+    with pytest.raises(driver.CaptureCancelled):
+        driver._restore_list_response(page, _FakeObserver(), _LIST_URL,
+                                      'SYNTHETIC-TAXPAYER', check_cancel=cancel)
+    assert page.goto_calls == 0
