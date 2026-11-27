@@ -53,11 +53,17 @@ _BUILD_HASH = r'''async url => {
 # a redeploy may serve chunks this page never pulled in, and the overlay records
 # what the portal currently serves rather than what this document happened to
 # load. Content-type and size guards are identical.
+#
+# Unlike _BUILD_HASH this returns a fixed state tag instead of null on refusal,
+# so the caller can name the failing asset class in a diagnostic without a
+# second request: 'missing' (non-2xx), 'fallback_html' (2xx but not JS, the
+# ~8 KB shell a retired chunk name serves), 'too_large' (over the byte budget).
 _MEASURE_PIN_JS = r'''async url => {
  const response=await fetch(url,{credentials:'same-origin',redirect:'error',cache:'no-store'});
- if(!response.ok || !/javascript/i.test(response.headers.get('content-type')||''))return null;
+ if(!response.ok)return 'missing';
+ if(!/javascript/i.test(response.headers.get('content-type')||''))return 'fallback_html';
  const bytes=await response.arrayBuffer();
- if(bytes.byteLength>4*1024*1024)return null;
+ if(bytes.byteLength>4*1024*1024)return 'too_large';
  return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
    .map(x=>x.toString(16).padStart(2,'0')).join('');
 }'''
@@ -66,6 +72,23 @@ _MEASURE_PIN_JS = r'''async url => {
 # budget the loaded-asset readers already use for it. Measuring it with the
 # 4 MiB guard would refuse the very asset a redeploy changes.
 _MEASURE_MAIN_PIN_JS = _MEASURE_PIN_JS.replace('4*1024*1024', '5*1024*1024')
+
+# Fixed asset roles for the refresh diagnostic. Roles only: never a URL, digest
+# or byte count, which would make the record a source fingerprint.
+_REFRESH_ASSET_ROLES = ('cit', 'main', 'vendor', 'other')
+_REFRESH_STATES = ('alive', 'missing', 'fallback_html', 'too_large')
+
+
+def _refresh_asset_role(url):
+    """Map a pinned URL to its fixed role, never echoing the URL itself."""
+    from coretax_corporate_projection import MAIN_SOURCE, VENDOR_SOURCE
+    if url == CIT_SOURCE_URL:
+        return 'cit'
+    if url == MAIN_SOURCE:
+        return 'main'
+    if url == VENDOR_SOURCE:
+        return 'vendor'
+    return 'other'
 
 
 def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
@@ -79,14 +102,17 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     Only URLs already in the reviewed allowlist are measured and recorded, so
     this can never widen the allowlist. ``expected_digest`` is mandatory and
     must be the positive 64-hex digest this page actually loaded: the re-measured
-    CIT asset has to equal it and the overlay is written only after that check
-    passes, so an unverified build is never persisted. Returns the refreshed
-    mapping, or None when any asset cannot be measured or verified, and the
-    caller then keeps the fail-closed DOM fallback.
+    CIT asset has to equal it, so an unverified build is never admitted.
+
+    Assets are measured independently. A retired chunk name that now serves the
+    ~8 KB shell no longer aborts the whole refresh: the assets that still verify
+    are recorded, and each refusal is named by fixed role and state. Returns the
+    verified mapping, or None when the CIT asset itself cannot be verified or the
+    overlay cannot be written, and the caller then keeps the fail-closed DOM
+    fallback.
     """
     from coretax_build_pins import load_build_pins, record_local_pins
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import MAIN_SOURCE
     # A missing/unusable loaded digest must never reach the record step: the
     # caller refuses before calling, and this guard keeps that true for any
     # future caller. None == None must never admit a build.
@@ -96,22 +122,40 @@ def _auto_refresh_build_pins(page, check_cancel=None, *, expected_digest):
     pins = load_build_pins()
     if not pins:
         return None
-    measured = {}
+    measured, refused = {}, []
     for url in pins:
         _check_cancel(check_cancel)
-        script = _MEASURE_MAIN_PIN_JS if url == MAIN_SOURCE else _MEASURE_PIN_JS
+        script = _MEASURE_MAIN_PIN_JS if _refresh_asset_role(url) == 'main' else _MEASURE_PIN_JS
         try:
-            digest = page.evaluate(script, url)
+            result = page.evaluate(script, url)
         except Exception:
-            return None
-        if not isinstance(digest, str) or len(digest) != 64:
-            return None
-        measured[url] = digest
+            # A driver/navigation failure is this asset's refusal, not the
+            # whole refresh's: the remaining assets still get measured.
+            refused.append((url, 'missing'))
+            continue
+        if isinstance(result, str) and len(result) == 64:
+            measured[url] = result
+        else:
+            refused.append((url, result if result in _REFRESH_STATES else 'missing'))
     if measured.get(CIT_SOURCE_URL) != expected_digest:
+        _record_refresh_refusals(refused)
         return None
     if not record_local_pins(measured):
         return None
+    _record_refresh_refusals(refused)
     return measured
+
+
+def _record_refresh_refusals(refused):
+    """Name each asset that did not verify, by fixed role and state only."""
+    if not refused:
+        return
+    from spt_desktop import diagnostics
+    for url, state in refused:
+        diagnostics.record('build.refresh_refused', level='WARNING',
+                           build_source='corporate',
+                           refresh_asset=_refresh_asset_role(url),
+                           refresh_asset_state=state)
 
 
 def _tabs(page):

@@ -145,11 +145,11 @@ def test_auto_refresh_uses_the_larger_reader_for_main(reviewed, isolated_overlay
             assert script is coretax_corporate._MEASURE_PIN_JS
 
 
-def test_auto_refresh_refuses_when_any_asset_cannot_be_measured(isolated_overlay):
+def test_auto_refresh_refuses_when_no_asset_can_be_measured(isolated_overlay):
     import coretax_corporate
 
     def evaluate(script, url):
-        return None
+        return 'missing'
 
     assert coretax_corporate._auto_refresh_build_pins(
         SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B) is None
@@ -165,6 +165,90 @@ def test_auto_refresh_refuses_when_the_page_raises(isolated_overlay):
     assert coretax_corporate._auto_refresh_build_pins(
         SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B) is None
     assert not isolated_overlay.exists()
+
+
+def test_auto_refresh_records_the_assets_that_still_verify(
+        reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """A retired chunk name must not abort the whole refresh.
+
+    This is the live 27 Nov case: the portal rolled new chunk names, so the
+    pinned non-CIT assets serve the ~8 KB shell. The assets that still verify
+    must be recorded, and each refusal named by fixed role and state.
+    """
+    import coretax_corporate
+    from coretax_corporate_projection import CIT_SOURCE, MAIN_SOURCE
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        if url in (CIT_SOURCE, MAIN_SOURCE):
+            return DIGEST_B
+        return 'fallback_html'
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        refreshed = coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    assert refreshed is not None
+    assert set(refreshed) == {CIT_SOURCE, MAIN_SOURCE}
+    stored = json.loads(isolated_overlay.read_text(encoding='utf-8'))
+    assert set(stored['digests']) == {CIT_SOURCE, MAIN_SOURCE}
+
+    refused = [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
+    assert refused, 'each unverified asset must be named'
+    assert all(e['build_source'] == 'corporate' for e in refused)
+    assert {e['refresh_asset_state'] for e in refused} == {'fallback_html'}
+    # Roles only: no URL, digest or byte count may reach the record.
+    blob = json.dumps(refused)
+    assert 'http' not in blob and DIGEST_B not in blob
+    assert {e['refresh_asset'] for e in refused} == {'other', 'vendor'}
+
+
+def test_auto_refresh_names_a_missing_asset_state(reviewed, isolated_overlay,
+                                                  monkeypatch, tmp_path):
+    """A non-2xx asset is reported as 'missing', not as a bare refusal."""
+    import coretax_corporate
+    from coretax_corporate_projection import CIT_SOURCE, MAIN_SOURCE
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        if url in (CIT_SOURCE, MAIN_SOURCE):
+            return DIGEST_B
+        return 'missing'
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    refused = [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
+    assert {e['refresh_asset_state'] for e in refused} == {'missing'}
+
+
+def test_auto_refresh_emits_no_refusal_when_every_asset_verifies(
+        reviewed, isolated_overlay, monkeypatch, tmp_path):
+    """The healthy path stays silent: no spurious WARNING on a good build."""
+    import coretax_corporate
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+
+    def evaluate(script, url):
+        return DIGEST_B
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert coretax_corporate._auto_refresh_build_pins(
+            SimpleNamespace(evaluate=evaluate), expected_digest=DIGEST_B)
+        assert log.flush()
+
+    assert not [e for e in records(tmp_path) if e['event'] == 'build.refresh_refused']
 
 
 @pytest.mark.parametrize('expected', [None, '', 'not-a-digest', DIGEST_B.upper(),
@@ -223,7 +307,7 @@ def test_gate_auto_admits_on_drift_and_emits_diagnostic(
                         lambda page: (object(), SimpleNamespace(count=lambda: 0)))
 
     def evaluate(script, *args):
-        return DIGEST_B  # the redeployed build
+        return DIGEST_B  # the redeployed build, every asset verifies
 
     page = SimpleNamespace(url='https://synthetic.invalid/view', evaluate=evaluate)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
