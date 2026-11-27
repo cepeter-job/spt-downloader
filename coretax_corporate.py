@@ -73,9 +73,8 @@ _MEASURE_PIN_JS = r'''async url => {
 # 4 MiB guard would refuse the very asset a redeploy changes.
 _MEASURE_MAIN_PIN_JS = _MEASURE_PIN_JS.replace('4*1024*1024', '5*1024*1024')
 
-# Fixed asset roles for the refresh diagnostic. Roles only: never a URL, digest
-# or byte count, which would make the record a source fingerprint.
-_REFRESH_ASSET_ROLES = ('cit', 'main', 'vendor', 'other')
+# Fixed asset states for the refresh diagnostic. States only: never a URL,
+# digest or byte count, which would make the record a source fingerprint.
 _REFRESH_STATES = ('alive', 'missing', 'fallback_html', 'too_large')
 
 
