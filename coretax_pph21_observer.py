@@ -9,7 +9,7 @@ from coretax_masa_bindings import MAIN_SOURCE
 from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests,
                                    _reference_order_build)
 
-ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
+ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.144030cf113a3ffb.js'
 
 def _pph21_pins():
     pins = load_build_pins()

@@ -6,7 +6,7 @@ from time import perf_counter as _paginator_clock
 from coretax_build_pins import load_build_pins
 from coretax_json import ORIGIN, JsonSafetyError
 
-CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
+CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js'
 CIT_SOURCE_SHA256 = load_build_pins().get(CIT_SOURCE_URL)
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),

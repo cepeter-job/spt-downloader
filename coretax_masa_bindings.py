@@ -10,10 +10,10 @@ from coretax_json import (ORIGIN, JsonSafetyError, _CorporateNumber, _Unsupporte
                           _corporate_request_key, _capture_clock_interval)
 from coretax_build_pins import load_build_pins
 
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
+MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js'
 TAX_SOURCES = {
-    'PPN': ORIGIN + '/returnsheets/id-ID/640.7ac2145c88285ca5.js',
-    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js',
+    'PPN': ORIGIN + '/returnsheets/id-ID/640.3eca1ab07c0e475b.js',
+    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.e51e1569a060aed7.js',
 }
 
 def _masa_pins():

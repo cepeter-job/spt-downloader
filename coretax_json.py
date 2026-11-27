@@ -53,8 +53,8 @@ CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-
 REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 REFERENCE_ORDER_SHA256 = load_build_pins().get(REFERENCE_ORDER_SOURCE)
 CORPORATE_REFERENCE_SOURCES = (
-    ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js',
-    ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js', REFERENCE_ORDER_SOURCE)
+    ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js',
+    ORIGIN + '/returnsheets/id-ID/main.cc3b47ac53bd3440.js', REFERENCE_ORDER_SOURCE)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
