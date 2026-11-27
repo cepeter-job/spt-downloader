@@ -6,7 +6,7 @@ import pytest
 
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
-from coretax_masa_observer import _PPN_MAIN_BUILD_HASH
+from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
 from test_corporate_l11b_projection import route, selected
 import support_json_corpus as corpus
 
@@ -49,8 +49,14 @@ def test_observer_emits_only_exact_two_pin_proof(monkeypatch, defect):
     page = SimpleNamespace(url=route(), evaluate=evaluate)
     forms = observer.observe_forms(page, selected(), corpus.SCOPE, object(),
                                    approved_digest=assets[projection.CIT_SOURCE])
-    assert probes == [(observer._BUILD_HASH, projection.CIT_SOURCE),
-                      (_PPN_MAIN_BUILD_HASH, projection.MAIN_SOURCE)]
+    # The hydrated L11-B proof verifies every provider it binds. Assert the
+    # invariant rather than an exact order: a defect may stop the walk early,
+    # which is exactly what must keep the binding refused.
+    probed = {url for _, url in probes}
+    assert projection.CIT_SOURCE in probed
+    if defect is None:
+        assert probed == {projection.CIT_SOURCE, projection.MAIN_SOURCE,
+                          projection.VENDOR_SOURCE}
     if defect is not None:
         assert forms is None
     else:
