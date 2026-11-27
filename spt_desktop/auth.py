@@ -207,7 +207,9 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
                 try:
                     context,page=launch(True)
                     break
-                except BaseException:
+                except Exception:
+                    # Exception, not BaseException: a cancellation (KeyboardInterrupt)
+                    # must propagate instead of being retried as a profile race.
                     context=None
                     if attempt + 1 < _RELAUNCH_ATTEMPTS:
                         time.sleep(_RELAUNCH_BACKOFF * (attempt + 1))
