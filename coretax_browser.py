@@ -1617,21 +1617,40 @@ def _corporate_contract_complete(*, forms, decoded):
     An unreviewed build can satisfy the structural probe -- a form root and a
     few fields exist -- while projecting fewer sections than the observed forms
     declare. That is a fail-open: the record is marked complete and carries
-    less than the DOM fallback would have. Require every observed form to be
-    projected, and the Induk to carry at least one bound value, so a narrower
-    native record falls back to DOM instead of being admitted.
+    less than the DOM fallback would have.
+
+    ``decoded['sections']`` is published one-to-one from the observed forms, so
+    section presence alone proves nothing. The projection ledger
+    (``provenance['projections']``) is what records which forms were actually
+    projected. A declared form is owed either a ledger entry or a section that
+    already carries reviewed content (fields/tables); an empty leaf is exactly
+    the narrower record this refuses. The Induk floor stays: a projection that
+    bound no value at all is not a complete record.
     """
     sections = [s for s in ((decoded or {}).get('sections') or []) if isinstance(s, dict)]
-    projected = {s.get('name') for s in sections}
+    by_name = {s.get('name'): s for s in sections}
+    ledger = ((decoded or {}).get('provenance') or {}).get('projections') or []
+    projected = {entry.get('form') for entry in ledger if isinstance(entry, dict)}
     # Disabled tabs bind nothing, and L10-B/L10-D are never displayed, so
     # neither can be part of what the projection owes the record.
     excluded = {'L10-B', 'L10-D'}
     declared = {f.get('name') for f in (forms or [])
                 if isinstance(f, dict) and f.get('name')
                 and not f.get('disabled') and f.get('name') not in excluded}
-    if not declared or not declared <= projected:
+    if not declared:
         return False
-    induk = next((s for s in sections if s.get('name') == 'Induk'), None)
+    for name in declared:
+        section = by_name.get(name)
+        if section is None:
+            return False
+        if name in projected:
+            continue
+        # An evidence leaf that already carries reviewed content was projected
+        # by an older path; an empty leaf is the fail-open.
+        if section.get('fields') or section.get('tables'):
+            continue
+        return False
+    induk = by_name.get('Induk')
     if induk is None:
         return False
     return any(isinstance(f, dict) and f.get('value') not in (None, '')

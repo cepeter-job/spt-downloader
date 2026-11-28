@@ -2187,6 +2187,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-A', 'L10-B',
                                 'L10-C', 'L10-D', 'L11-A', 'L11-C'}
             missing = set(FORMS) - data_conditional - names
+            # Reviewed-build integrity only, deliberately NOT a completeness
+            # gate: the DOM fallback reads the same page, so a tab this build
+            # does not render is missing from both sources -- refusing native
+            # here would be a false refusal, not a fail-open fix. Completeness
+            # of the *projection* is the contract check in the hybrid path.
             if digest == CIT_SOURCE_SHA256 and missing:
                 return unavailable(reason='incomplete_coverage',
                                    missing_forms=','.join(sorted(missing)))

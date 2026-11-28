@@ -151,6 +151,17 @@ def _wait_ready(page,deadline,check_cancel,emit=None):
     return False
 
 
+def _backoff(seconds, check_cancel, slice_seconds=0.25):
+    """Sleep in slices so Stop is honoured during the relaunch backoff."""
+    deadline = time.monotonic() + seconds
+    while True:
+        check_cancel()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(slice_seconds, remaining))
+
+
 @diagnostics.traced('authentication')
 def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,manual_timeout=300,*,account=None):
     """Return an application-owned authorized browser context for read-only capture.
@@ -212,12 +223,16 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
                     # must propagate instead of being retried as a profile race.
                     context=None
                     if attempt + 1 < _RELAUNCH_ATTEMPTS:
-                        time.sleep(_RELAUNCH_BACKOFF * (attempt + 1))
+                        _backoff(_RELAUNCH_BACKOFF * (attempt + 1), check_cancel)
             if context is None:
                 diagnostics.record('auth.state', reason='headless_relaunch_failed',
                                    transport_failure='context_closed')
                 context,page=launch(False)
-                emit('login_required','Sesi headless tidak dapat dibuka; lanjutkan di browser terlihat.')
+                # The session is already authenticated, so the visible context
+                # normally reaches ready at once; only ask for a login when it
+                # genuinely does not.
+                if not _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):
+                    emit('login_required','Sesi headless tidak dapat dibuka; lanjutkan di browser terlihat.')
             elif _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):
                 return context,page
             else:
