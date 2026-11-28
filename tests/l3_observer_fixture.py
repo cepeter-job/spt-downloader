@@ -2,11 +2,11 @@
 import html
 import json
 
-import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l3_native import GRID, FOOTER, REFERENCES, OWNERS, GROUPS, packets, request
 from test_corporate_l3_projection import HEADERS, SPANS
 import support_json_corpus as corpus
+from conftest import pin_override
 
 
 def l3_form_html(defect=None):
@@ -78,7 +78,7 @@ class Fixture(BaseFixture):
         self.footer_count = 0
         super().__init__(browser, monkeypatch, model=model, defect=defect)
         self.raw = raw[0]['body']
-        monkeypatch.setattr(projection, 'L3_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
 
     def route(self, route):
         req = route.request

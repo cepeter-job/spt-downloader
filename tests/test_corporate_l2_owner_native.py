@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
+from conftest import pin_override
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
 from coretax_json import JsonSafetyError, adapt_corporate_detail, has_audit_dump_tables
@@ -50,9 +51,9 @@ class Fixture(SpaFixture):
         # The L2-only document keeps its legacy natural COUNTRY_CODE GET (the
         # SPA issues it on the detail load); the cache-miss defect observes
         # none of them, so the bounded re-fetch restores the catalogs.
-        monkeypatch.setattr(projection, 'L2_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
         if l3:
-            monkeypatch.setattr(projection, 'L3_BUILD_DIGESTS', self.pins, raising=False)
+            pin_override(monkeypatch, self.pins)
         value = corpus.current_form()
         value['ReturnSheetRecordIdentifier'] = self.record['record_id']
         l2 = populated()

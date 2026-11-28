@@ -9,6 +9,7 @@ import coretax_corporate_projection as projection
 import support_json_corpus as corpus
 from test_corporate_l7_native import selected, envelope, bindings, packet, FRAME, PINS
 from test_corporate_l7_projection import ROOT, BODY, SUFFIXES
+from conftest import pin_override
 
 ROUTE = FRAME + '?view=true'
 CHAIN = ['rshshr-corporate-income-tax-return', 'rshshr-citr-l7-form',
@@ -72,7 +73,7 @@ def adapt(raw=None, observed=None):
 
 @pytest.fixture(autouse=True)
 def synthetic_pins(monkeypatch):
-    monkeypatch.setattr(projection, 'L7_NEGATIVE_BUILD_DIGESTS', dict(NEGATIVE_PINS), raising=False)
+    pin_override(monkeypatch, dict(NEGATIVE_PINS), raising=False)
 
 
 def test_negative_admission_preserves_raw_profit_typed_owners_and_separate_absence():
@@ -229,7 +230,7 @@ def test_both_approved_and_observed_new_pins_must_be_positive_without_touching_v
     elif defect == 'none': pins = dict.fromkeys(pins)
     elif defect == 'short': pins[projection.VENDOR_SOURCE] = 'd'
     else: pins[projection.VENDOR_SOURCE] = 'D' * 64
-    monkeypatch.setattr(projection, 'L7_NEGATIVE_BUILD_DIGESTS', pins)
+    pin_override(monkeypatch, pins)
     observed = offer(pins=pins)
     result = adapt(negative_packet(negative_envelope() if negative else envelope()), observed)
     assert result['eligible'] is (not negative)

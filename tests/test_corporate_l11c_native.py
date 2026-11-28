@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
+from conftest import pin_override
 from coretax_json import JsonSafetyError, adapt_corporate_detail
 import support_json_corpus as corpus
 from test_corporate_l7_native import (FRAME, MAIN, PINS, L7Fixture, selected,
@@ -210,8 +211,10 @@ class L11CFixture(L7Fixture):
         self.extra_form = ('L11-C', 'rshshr-citr-l11c-form')
         self.raw = corpus.wire(envelope(model)).encode()
         projection = importlib.import_module('coretax_corporate_projection')
-        monkeypatch.setattr(projection, 'L11C_BUILD_DIGESTS', {
-            **projection.BUILD_DIGESTS, VENDOR: hashlib.sha256(VENDOR_BUILD).hexdigest()}, raising=False)
+        # Call-time allowlist: the observer resolves pins per call, so the
+        # fixture overrides the loader rather than a module-level dict.
+        pin_override(monkeypatch, {**projection.BUILD_DIGESTS,
+                                   VENDOR: hashlib.sha256(VENDOR_BUILD).hexdigest()})
 
     def route(self, route):
         if route.request.url == COUNTRY:

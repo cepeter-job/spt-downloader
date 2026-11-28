@@ -6,6 +6,7 @@ import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l4_populated_native import GRID, FOOTER, REFS, original_packets
 from test_corporate_l4_projection import request
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):
@@ -24,7 +25,7 @@ class Fixture(BaseFixture):
         assert self.record['source_fields']['TaxTypeCode'] == 'ICT_RCIT'
         assert self.record['source_fields']['ReturnSheetTypeCode'] == 'ICT_RCITR'
         self.raw = raw[0]['body']
-        monkeypatch.setattr(projection, 'L4_POPULATED_BUILD_DIGESTS', dict(self.pins))
+        pin_override(monkeypatch, dict(self.pins))
         # Replace only configured public provider bytes/pins in the synthetic
         # SPA; the real shared producer/binder and capture still execute.
         import coretax_build_pins

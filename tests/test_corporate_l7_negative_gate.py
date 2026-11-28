@@ -10,6 +10,7 @@ import coretax_corporate as observer
 import coretax_corporate_projection as projection
 from spt_desktop import diagnostics
 from test_diagnostics import records
+from conftest import pin_override
 
 EVENT = 'corporate.l7_negative_gate'
 
@@ -112,7 +113,7 @@ def test_missing_capture_protocol_is_named(tmp_path, monkeypatch):
 
 
 def test_invalid_pins_are_named(tmp_path, monkeypatch):
-    monkeypatch.setattr(projection, 'L7_NEGATIVE_BUILD_DIGESTS', {projection.MAIN_SOURCE: 'x'})
+    pin_override(monkeypatch, {projection.MAIN_SOURCE: 'x'})
     assert run(tmp_path, monkeypatch, Capture(), Page(pins())) is None
     assert gates(tmp_path) == ['pins']
 

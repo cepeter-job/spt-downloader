@@ -17,6 +17,7 @@ import support_json_corpus as corpus
 from test_corporate_l10a_projection import FRAME, GRID, ROOT, owned, observed, request, row, selected
 from test_corporate_l3_observer import open_selected
 from test_json_hybrid_native import browser as browser
+from conftest import pin_override
 
 KINDS = tuple(projection.L10A_LABELS.values())
 URLS = {kind: adapter.ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind for kind in KINDS}
@@ -210,7 +211,7 @@ class Fixture(BaseFixture):
             TypeOfTransaction=None, PricingMethod=None, TransactionValue=None)]
         super().__init__(browser, monkeypatch, defect=defect)
         self.raw = corpus.wire(envelope()).encode()
-        monkeypatch.setattr(projection, 'L10A_BUILD_DIGESTS', dict(self.pins))
+        pin_override(monkeypatch, dict(self.pins))
         monkeypatch.setattr(adapter, 'load_build_pins', lambda: dict(self.pins))
         monkeypatch.setattr(coretax_build_pins, 'load_build_pins', lambda: dict(self.pins))
 

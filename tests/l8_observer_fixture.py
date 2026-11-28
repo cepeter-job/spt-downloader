@@ -1,16 +1,16 @@
 """Owned synthetic SPA L8 fixture with business-read traps; runners only."""
 import html
 
-import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture
 from test_corporate_l8_native import envelope, HEADERS, GROUP
 import support_json_corpus as corpus
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):
     def __init__(self, browser, monkeypatch, *, model='Normal', defect=None):
         super().__init__(browser, monkeypatch, model=model, defect=defect)
-        monkeypatch.setattr(projection, 'L8_BUILD_DIGESTS', dict(self.pins), raising=False)
+        pin_override(monkeypatch, dict(self.pins))
         self.raw = corpus.wire(envelope(model)).encode()
 
     def detail(self):

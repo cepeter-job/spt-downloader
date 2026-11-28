@@ -14,6 +14,7 @@ import coretax_corporate_projection as projection
 import coretax_json as adapter
 import support_json_corpus as corpus
 from test_corporate_l9_grids import asset, LABELS, HEADERS
+from conftest import pin_override
 from test_corporate_l9_projection import (ROUTE, selected, lifetime, grid_declarations,
     observed as recap_bindings, payload_form)
 
@@ -190,7 +191,7 @@ def test_details_proof_and_original_custody_refuse_closed_defects(shared_catalog
     if defect in ('main_pin', 'vendor_pin'):
         proof['builds'][projection.MAIN_SOURCE if defect == 'main_pin' else projection.VENDOR_SOURCE] = 'a' * 64
     elif defect == 'missing_configured_pin':
-        monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', {})
+        pin_override(monkeypatch, {})
     elif defect == 'timezone':
         proof['timezone'] = 'UTC'
     elif defect == 'table_owner':

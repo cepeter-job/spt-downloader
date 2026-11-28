@@ -11,6 +11,25 @@ from coretax_json import ORIGIN, JsonSafetyError
 CIT_SOURCE_URL = resolve_role_url(
     'cit', ORIGIN + '/returnsheets/id-ID/525.4e63a9d496f5561d.js')
 CIT_SOURCE_SHA256 = load_build_pins().get(CIT_SOURCE_URL)
+
+
+def _current_pins():
+    """Resolve the corporate roles and their digests at call time.
+
+    The module-level constants are a reviewed snapshot taken at import. A
+    redeploy the overlay follows mid-run must not leave every per-form
+    validator comparing the page against a stale digest, so this re-reads the
+    allowlist and re-resolves each role. The gate and the validators then agree
+    on the same URLs, which is what D needs: the structure decides and the
+    digest is only ever a tripwire.
+    """
+    from coretax_build_pins import load_build_pins, resolve_role_url
+    from coretax_corporate_projection import CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE
+    urls = (resolve_role_url('cit', CIT_SOURCE),
+            resolve_role_url('main', MAIN_SOURCE),
+            resolve_role_url('vendor', VENDOR_SOURCE))
+    pins = load_build_pins()
+    return urls, {url: pins[url] for url in urls if url in pins}
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),
@@ -439,7 +458,7 @@ def _observe_l10c_history(form, tab, panel, capture, check_cancel):
 def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
     """Offer only shared passive catalogs and positively loaded exact providers."""
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import (L10C_BUILD_DIGESTS, L10C_HEADERS, MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_corporate_projection import L10C_HEADERS
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
     from spt_desktop import diagnostics
@@ -454,17 +473,18 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
     if history is not None:
         return _refuse('history_' + history)
     needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
-    urls = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
-    if set().union(*map(set, urls.values())) != needed:
+    catalogs = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
+    if set().union(*map(set, catalogs.values())) != needed:
         return _refuse('reference_catalogs')  # The independent shared producer has not been integrated.
-    pins = L10C_BUILD_DIGESTS
-    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if (set(pins) != set(urls)
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
         return _refuse('build_pins')
     route, builds = page.url, {}
-    for url in (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE):
+    for url in urls:
         _check_cancel(check_cancel)
-        script = _PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH
+        script = _PPN_MAIN_BUILD_HASH if url == main_url else _BUILD_HASH
         script = script.replace('s=>s.src===url', 's=>s.isConnected&&s.src===url').replace(
             'e=>e.name===url)', "e=>e.name===url&&e.initiatorType==='script')")
         digest = page.evaluate(script, url)
@@ -502,8 +522,7 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
     """Additive value-free capability; v1 survives unavailable optional proof."""
     from spt_desktop import diagnostics
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import (L7_NEGATIVE_BUILD_DIGESTS, L7_OWNER_CHAIN,
-                                              MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_corporate_projection import L7_OWNER_CHAIN
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
 
     def gate(name):
@@ -527,8 +546,8 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
         capture.observe_component_lifetime(check_cancel=check_cancel)
         return result
 
-    pins = L7_NEGATIVE_BUILD_DIGESTS
-    urls = (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE)
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
     if any(not callable(getattr(capture, name, None)) for name in
            ('observe_component_lifetime', 'bind_l7_structure', 'observe_l7_lifetime')):
         return gate('protocol')  # Legacy structural callers need no new optional protocol.
@@ -549,7 +568,7 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
     for url in urls:
         # Preserve MAIN's 5MiB reader. Only this optional capability strengthens
         # provider predicates; generic/v1 readers remain byte-for-byte separate.
-        script = _PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH
+        script = _PPN_MAIN_BUILD_HASH if url == main_url else _BUILD_HASH
         script = script.replace('s=>s.src===url', 's=>s.isConnected&&s.src===url').replace(
             'e=>e.name===url)', "e=>e.name===url&&e.initiatorType==='script')")
         digest = read(lambda: page.evaluate(script, url))
@@ -578,7 +597,7 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
 def _observe_l2(page, form, tab, capture, digest, check_cancel):
     """Only exact offline owners/providers; references stay passively produced."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import (L2_BUILD_DIGESTS, L2_COMPONENTS, L2_GROUPS,
+    from coretax_corporate_projection import (L2_COMPONENTS, L2_GROUPS,
         L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS, L2_AFFILIATE_HEADERS,
         L2_AFFILIATE_SPANS, MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
@@ -594,24 +613,26 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         _check_cancel(check_cancel)
         return None
     _check_cancel(check_cancel)
-    if (set(L2_BUILD_DIGESTS) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if (set(pins) != set(urls)
             or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
-                   for value in L2_BUILD_DIGESTS.values())
-            or digest != L2_BUILD_DIGESTS[CIT_SOURCE_URL]
+                   for value in pins.values())
+            or digest != pins[cit_url]
             or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
         return None
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.isConnected && s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return None
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if main_digest != L2_BUILD_DIGESTS[MAIN_SOURCE] or vendor_digest != L2_BUILD_DIGESTS[VENDOR_SOURCE]:
+    if main_digest != pins[main_url] or vendor_digest != pins[vendor_url]:
         return None
     tables = []
     for index, (headers, spans) in enumerate(((L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS),
@@ -667,24 +688,24 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
 def _observe_l11b_hydrated(page, form, tab, capture, digest, main_digest, check_cancel):
     """Optional eager-child submitted profile; structure only, no business reads."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import (L11B_HYDRATED_BUILD_DIGESTS, MAIN_SOURCE,
-                                              VENDOR_SOURCE, l11b_tables)
+    from coretax_corporate_projection import l11b_tables
     from coretax_masa_observer import TABLE, _REFERENCE_ORDER_BUILD_HASH
-    pins = L11B_HYDRATED_BUILD_DIGESTS
-    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if (set(pins) != set(urls)
             or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value) for value in pins.values())
-            or digest != pins[CIT_SOURCE_URL] or main_digest != pins[MAIN_SOURCE]):
+            or digest != pins[cit_url] or main_digest != pins[main_url]):
         return None
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return None
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if type(vendor_digest) is not str or vendor_digest != pins[VENDOR_SOURCE]:
+    if type(vendor_digest) is not str or vendor_digest != pins[vendor_url]:
         return None
     # All required grid sets, not merely whichever conditional grid was last
     # sampled. Both passes also retain original form identity and enabled owner.
@@ -737,7 +758,7 @@ def _observe_l11b_hydrated(page, form, tab, capture, digest, main_digest, check_
             return None
         _check_cancel(check_cancel)
         return {'kind': 'corporate-l11b-hydrated-v2', 'builds': {
-            CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+            cit_url: digest, main_url: main_digest, vendor_url: vendor_digest},
             'route': page.url, 'part_ii': len(samples[0]) == 3, 'tables': samples[0]}
     finally:
         identity.dispose()
@@ -746,9 +767,11 @@ def _observe_l11b_hydrated(page, form, tab, capture, digest, main_digest, check_
 def _observe_l1d(page, form, capture, digest, check_cancel):
     """Inspect only owned structure, loaded providers and fresh lifetime."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import L1D_BUILD_DIGESTS, L1D_OMISSION_LAYOUT, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_corporate_projection import L1D_OMISSION_LAYOUT
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
-    if digest != L1D_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if digest != pins.get(cit_url):
         return None
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return None
@@ -756,16 +779,16 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return None
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if (main_digest != L1D_BUILD_DIGESTS.get(MAIN_SOURCE)
-            or vendor_digest != L1D_BUILD_DIGESTS.get(VENDOR_SOURCE)
+    if (main_digest != pins.get(main_url)
+            or vendor_digest != pins.get(vendor_url)
             or form.locator('table').count() != 3):
         return None
     tables, body_layout = [], None
@@ -815,7 +838,7 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
         if stable is not True:
             return None
     return {'kind': 'corporate-l1d-v1', 'builds': {
-        CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+        cit_url: digest, main_url: main_digest, vendor_url: vendor_digest},
         'route': page.url, **environment, 'tables': tables,
         **({'body_layout': body_layout} if body_layout is not None else {})}
 
@@ -823,9 +846,11 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
 def _observe_l8(page, form, capture, digest, check_cancel):
     """Bind the single L8 structure without reading amounts or business controls."""
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import L8_BUILD_DIGESTS, L8_HEADERS, _L8_GROUP, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_corporate_projection import L8_HEADERS, _L8_GROUP
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
-    if digest != L8_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if digest != pins.get(cit_url):
         capture.l8_refuse('l8_digest')
         return None
     if capture.observe_l8_lifetime(check_cancel=check_cancel) is None:
@@ -833,18 +858,18 @@ def _observe_l8(page, form, capture, digest, check_cancel):
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         capture.l8_refuse('l8_providers')
         return None
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
     grid = form.locator('rsh-citr-l8-form-grid1')
-    if (main_digest != L8_BUILD_DIGESTS.get(MAIN_SOURCE)
-            or vendor_digest != L8_BUILD_DIGESTS.get(VENDOR_SOURCE)
+    if (main_digest != pins.get(main_url)
+            or vendor_digest != pins.get(vendor_url)
             or form.locator('table').count() != 1 or grid.count() != 1 or not grid.is_visible()
             or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
         capture.l8_refuse('l8_structure')
@@ -882,7 +907,7 @@ def _observe_l8(page, form, capture, digest, check_cancel):
             capture.l8_refuse('l8_metadata')
         return None
     return {'kind': 'corporate-l8-v1', 'builds': {
-        CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+        cit_url: digest, main_url: main_digest, vendor_url: vendor_digest},
         'route': page.url, **environment, 'tables': [{'component': 'rsh-citr-l8-form-grid1',
             'headers': metadata['headers'], 'footer_spans': metadata['footer_spans'],
             'source_structure': structure}]}
@@ -1027,16 +1052,17 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import L3_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_json import CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
     def refuse(reason):
         # Fixed local reasons only; never record observed request/DOM values.
         if reason_out is not None:
             reason_out['reason'] = reason
         return None
 
-    if digest != L3_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+    if digest != pins.get(cit_url):
         return refuse('cit_digest')
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return refuse('lifetime_start')
@@ -1044,17 +1070,17 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return refuse('script_providers')
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if main_digest != L3_BUILD_DIGESTS.get(MAIN_SOURCE):
+    if main_digest != pins.get(main_url):
         return refuse('main_digest')
-    if vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE):
+    if vendor_digest != pins.get(vendor_url):
         return refuse('vendor_digest')
     count = form.locator('table').count()
     standalone = count == 3 and _l3_standalone_layout(form)
@@ -1153,8 +1179,8 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
                           'requests': sorted(requests, key=lambda request: request['First'])}],
         'dependencies': [{'endpoint': CORPORATE_L3_FOOTER_URL,
                           'request_json': {'ReturnSheetRecordId': record['record_id']}}],
-        'projection': {'kind': 'corporate-l3-v1', 'builds': {CIT_SOURCE_URL: digest,
-            MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
+        'projection': {'kind': 'corporate-l3-v1', 'builds': {cit_url: digest,
+            main_url: main_digest, vendor_url: vendor_digest}, 'route': page.url,
               **environment, 'tables': tables, 'references': references,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
@@ -1188,17 +1214,18 @@ def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
 def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Five structural owners and four owned paginators; no DOM business reads."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import (L11A_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE,
-                                             _L11A_OWNERS, _L11A_GROUPS)
+    from coretax_corporate_projection import (_L11A_OWNERS, _L11A_GROUPS)
     from coretax_json import (CORPORATE_L11A_GRID_URLS, CORPORATE_L11A_REFERENCE_URLS,
                               CORPORATE_REFERENCE_REQUESTS)
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
     def refuse(reason):
         if reason_out is not None:
             reason_out['reason'] = reason
         return None
 
-    if digest != L11A_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+    if digest != pins.get(cit_url):
         return refuse('cit_digest')
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return refuse('lifetime_start')
@@ -1206,17 +1233,17 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
         performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
-        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+        list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return refuse('script_providers')
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if main_digest != L11A_BUILD_DIGESTS.get(MAIN_SOURCE):
+    if main_digest != pins.get(main_url):
         return refuse('main_digest')
-    if vendor_digest != L11A_BUILD_DIGESTS.get(VENDOR_SOURCE):
+    if vendor_digest != pins.get(vendor_url):
         return refuse('vendor_digest')
     tables = []
     for phase in range(2):
@@ -1295,8 +1322,8 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return refuse('lifetime_end')
     return {'responses': responses,
-        'projection': {'kind': 'corporate-l11a-v1', 'builds': {CIT_SOURCE_URL: digest,
-            MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
+        'projection': {'kind': 'corporate-l11a-v1', 'builds': {cit_url: digest,
+            main_url: main_digest, vendor_url: vendor_digest}, 'route': page.url,
             **environment, 'tables': tables, 'references': references}}
 
 
@@ -1398,12 +1425,13 @@ def _l10a_table(form, tab):
 
 def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import L10A_LABELS, L10A_BUILD_DIGESTS
+    from coretax_corporate_projection import L10A_LABELS
     _check_cancel(check_cancel)
     if before is None or not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
         return None
     references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), check_cancel=check_cancel)
-    if references is None or references['builds'] != L10A_BUILD_DIGESTS:
+    # Call-time allowlist: the shared producer resolves pins per call.
+    if references is None or references['builds'] != _current_pins()[1]:
         return None
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
@@ -1496,7 +1524,7 @@ def _l9_tables(form, check_cancel):
 def _observe_l9(page, form, capture, digest, check_cancel):
     """Additive details proof; no transport registration or active catalog call."""
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import L9_DETAIL_BUILD_DIGESTS, L9_REFERENCE_KINDS, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_corporate_projection import L9_REFERENCE_KINDS
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
     from spt_desktop import diagnostics
@@ -1513,10 +1541,11 @@ def _observe_l9(page, form, capture, digest, check_cancel):
     admitted = {kinds[0] for kinds in CORPORATE_REFERENCE_REQUESTS.values() if len(kinds) == 1}
     if not set(L9_REFERENCE_KINDS) <= admitted:
         return _refuse('reference_kinds_not_admitted')
-    pins = L9_DETAIL_BUILD_DIGESTS
-    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
+    if (set(pins) != set(urls)
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())
-            or pins[CIT_SOURCE_URL] != digest):
+            or pins[cit_url] != digest):
         return _refuse('build_pins')
     references, observed_kinds = [], set()
     l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
@@ -1540,15 +1569,15 @@ def _observe_l9(page, form, capture, digest, check_cancel):
         return _refuse('component_lifetime')
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src===url) ||
-        performance.getEntriesByType('resource').some(e => e.name===url))''', list(pins))
+        performance.getEntriesByType('resource').some(e => e.name===url))''', list(urls))
     _check_cancel(check_cancel)
     if providers is not True:
         return _refuse('providers')
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if main_digest != pins[MAIN_SOURCE] or vendor_digest != pins[VENDOR_SOURCE]:
+    if main_digest != pins[main_url] or vendor_digest != pins[vendor_url]:
         return _refuse('provider_digests')
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
@@ -1564,17 +1593,16 @@ def _observe_l9(page, form, capture, digest, check_cancel):
 def _observe_induk_submitted(page, form, capture, digest, check_cancel):
     """Optional amount capability: source/provider/structure only, never values."""
     from coretax_browser import _check_cancel
-    from coretax_corporate_projection import (INDUK_SUBMITTED_BUILD_DIGESTS,
-        INDUK_SUBMITTED_FIELDS, INDUK_INACTIVE_FIELDS, INDUK_INACTIVE_SELECTORS,
-        MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_corporate_projection import (INDUK_SUBMITTED_FIELDS,
+        INDUK_INACTIVE_FIELDS, INDUK_INACTIVE_SELECTORS)
     from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
     _check_cancel(check_cancel)
     lifetime = getattr(capture, 'observe_component_lifetime', None)
-    pins = INDUK_SUBMITTED_BUILD_DIGESTS
-    urls = (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE)
+    urls, pins = _current_pins()
+    cit_url, main_url, vendor_url = urls
     if (not callable(lifetime) or set(pins) != set(urls)
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
-                   for value in pins.values()) or digest != pins[CIT_SOURCE_URL]):
+                   for value in pins.values()) or digest != pins[cit_url]):
         return None
     controls = [name for _, name, _ in INDUK_SUBMITTED_FIELDS]
     structure = form.evaluate('''(form, controls) => {
@@ -1607,11 +1635,11 @@ def _observe_induk_submitted(page, form, capture, digest, check_cancel):
     _check_cancel(check_cancel)
     if providers is not True:
         return None
-    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
     _check_cancel(check_cancel)
-    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, vendor_url)
     _check_cancel(check_cancel)
-    if main_digest != pins[MAIN_SOURCE] or vendor_digest != pins[VENDOR_SOURCE]:
+    if main_digest != pins[main_url] or vendor_digest != pins[vendor_url]:
         return None
     environment = page.evaluate('''() => ({locale:navigator.language,
         timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})''')
@@ -1788,7 +1816,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     selected = _corporate_selected(record, scope)
     _check_corporate_route(page.url, selected)
     try:
-        digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
+        urls, pins = _current_pins()
+        cit_url, main_url, vendor_url = urls
+        digest = page.evaluate(_BUILD_HASH, cit_url)
         _check_cancel(check_cancel)
         # Both digests must be positive 64-hex SHAs; None == None must
         # never admit a build (missing pin + missing asset).
@@ -1928,19 +1958,18 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                             if detailed is not None and _enabled_form_binding(form, tab, name):
                                 binding['projection'] = detailed
             if name == 'L11-B':
-                from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import _PPN_MAIN_BUILD_HASH
                 # The unconditional offline grid uses the reviewed main-bundle
                 # Number renderer. No business values or new endpoint reads.
-                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
                 _check_cancel(check_cancel)
-                if (set(BUILD_DIGESTS) != {CIT_SOURCE_URL, MAIN_SOURCE}
+                if (set(pins) < {cit_url, main_url}
                         or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
-                               for value in (digest, main_digest, *BUILD_DIGESTS.values()))
-                        or {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest} != BUILD_DIGESTS):
+                               for value in (digest, main_digest, *pins.values()))
+                        or digest != pins.get(cit_url) or main_digest != pins.get(main_url)):
                     return unavailable()
                 binding['projection'] = {'kind': 'corporate-l11b-v1',
-                    'builds': {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url}
+                    'builds': {cit_url: digest, main_url: main_digest}, 'route': page.url}
                 lifetime = getattr(capture, 'observe_component_lifetime', None)
                 if callable(lifetime) and lifetime(check_cancel=check_cancel) is not None:
                     if 'Induk' not in names:
@@ -2024,7 +2053,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
                     return unavailable()
-                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
                 _check_cancel(check_cancel)
                 if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
                     return unavailable()
@@ -2044,17 +2073,16 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     binding['raw_negative_projection'] = strong
             if name == 'L11-C':
                 _advance('l11c')
-                from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
-                if 'Induk' not in names or L11C_BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
+                if 'Induk' not in names or pins.get(cit_url) != digest:
                     return unavailable()
-                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, main_url)
                 _check_cancel(check_cancel)
-                vendor_digest = page.evaluate(_BUILD_HASH, VENDOR_SOURCE)
+                vendor_digest = page.evaluate(_BUILD_HASH, vendor_url)
                 _check_cancel(check_cancel)
-                if (main_digest != L11C_BUILD_DIGESTS.get(MAIN_SOURCE)
-                        or vendor_digest != L11C_BUILD_DIGESTS.get(VENDOR_SOURCE)):
+                if (main_digest != pins.get(main_url)
+                        or vendor_digest != pins.get(vendor_url)):
                     return unavailable()
                 grid = form.locator('rshshr-citr-l11c-form-grid1')
                 if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
@@ -2071,7 +2099,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     references.append({'endpoint': CORPORATE_COUNTRY_REFERENCE_URL,
                                        'method': 'GET', 'sequences': sequences})
                 binding['projection'] = {'kind': 'corporate-l11c-v1', 'builds': {
-                    CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+                    cit_url: digest, main_url: main_digest, vendor_url: vendor_digest},
                     'route': page.url, **environment, 'references': references,
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}

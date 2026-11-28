@@ -2,11 +2,11 @@
 import html
 import json
 
-import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l11a_native import GRIDS, OWNERS, GROUPS, packets, request
 from test_corporate_l11a_projection import HEADERS, CAPTIONS
 import support_json_corpus as corpus
+from conftest import pin_override
 
 
 class Fixture(BaseFixture):
@@ -22,7 +22,7 @@ class Fixture(BaseFixture):
         self.reference_raw = {p['context']['url']: p['body'] for p in raw if p['context']['method'] == 'GET'}
         super().__init__(browser, monkeypatch, model=model, defect=defect)
         self.raw = raw[0]['body']
-        monkeypatch.setattr(projection, 'L11A_BUILD_DIGESTS', self.pins, raising=False)
+        pin_override(monkeypatch, self.pins)
 
     def route(self, route):
         req = route.request
