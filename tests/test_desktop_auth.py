@@ -179,7 +179,7 @@ class _FakeChromium:
         return _FakeContext(headless)
 
 
-def _run_auth(monkeypatch, chromium, tmp_path):
+def _run_auth(monkeypatch, chromium, tmp_path, emit=None):
     mod = auth()
     # The fake page carries no DOM; the flow only needs "not signed in yet".
     monkeypatch.setattr(mod, 'authenticated', lambda page: False)
@@ -195,7 +195,7 @@ def _run_auth(monkeypatch, chromium, tmp_path):
     pw = _Playwright()
     pw.chromium = chromium
     return mod.authenticate_owned(pw, str(tmp_path), 'msedge', True,
-                                  lambda *a: None, lambda: None, manual_timeout=1)
+                                  emit or (lambda *a: None), lambda: None, manual_timeout=1)
 
 
 def test_headless_relaunch_retries_then_returns_headless(monkeypatch, tmp_path):
@@ -222,3 +222,35 @@ def test_headless_relaunch_failure_keeps_the_visible_session(monkeypatch, tmp_pa
     context, page = _run_auth(monkeypatch, chromium, tmp_path)
     assert context.headless is False
     assert context.closed is False
+
+
+def test_headless_relaunch_failure_does_not_ask_for_a_new_login(monkeypatch, tmp_path):
+    """The visible fallback keeps the authenticated session; no re-login prompt.
+
+    The profile already holds a valid session, so the visible context reaches
+    ready at once. Telling the user to log in again would be a false prompt.
+    """
+    events = []
+    chromium = _FakeChromium(fail_headless=lambda n: n >= 2)
+    context, page = _run_auth(monkeypatch, chromium, tmp_path,
+                              emit=lambda *a: events.append(a))
+    assert context.headless is False
+    # The generic manual-login prompt already fired before the relaunch; the
+    # fallback must not add a second, false "headless could not open" prompt.
+    assert not [event for event in events if 'headless' in event[1]]
+
+
+def test_relaunch_backoff_honours_cancellation(monkeypatch):
+    """Stop during the relaunch backoff aborts instead of sleeping it out."""
+    mod = auth()
+    monkeypatch.setattr(mod.time, 'sleep', lambda seconds: None)
+    calls = []
+
+    def check_cancel():
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        mod._backoff(5, check_cancel)
+    assert len(calls) == 2

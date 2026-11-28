@@ -493,9 +493,17 @@ def test_corporate_contract_rejects_a_record_narrower_than_the_observed_forms():
     narrow = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]}]}
     assert _corporate_contract_complete(forms=forms, decoded=narrow) is False
 
+    # Sections are published one-to-one from the observed forms, so a record
+    # that merely lists every name is not proof: the projection ledger is.
+    empty_leaves = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]},
+                                 {'name': 'L1-B', 'fields': []},
+                                 {'name': 'L3', 'fields': []}]}
+    assert _corporate_contract_complete(forms=forms, decoded=empty_leaves) is False
+
     full = {'sections': [{'name': 'Induk', 'fields': [{'value': '2025'}]},
                          {'name': 'L1-B', 'fields': []},
-                         {'name': 'L3', 'fields': []}]}
+                         {'name': 'L3', 'fields': []}],
+            'provenance': {'projections': [{'form': 'Induk'}, {'form': 'L1-B'}, {'form': 'L3'}]}}
     assert _corporate_contract_complete(forms=forms, decoded=full) is True
 
 
