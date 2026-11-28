@@ -18,13 +18,17 @@ os.environ['LOCALAPPDATA'] = _ISOLATED
 atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 
 
-def pin_override(monkeypatch, pins):
+def pin_override(monkeypatch, pins, *, raising=True):
     """Point the allowlist at fixture digests for one test.
 
     The per-form validators resolve roles and digests at call time, so a test
     overrides the allowlist rather than a module-level dict. This is the seam
     that replaced monkeypatching ``L*_BUILD_DIGESTS``.
+
+    ``raising`` is accepted so a migrated ``monkeypatch.setattr(..., raising=False)``
+    call site keeps its original meaning; ``load_build_pins`` always exists, so
+    the flag only has to be tolerated.
     """
     import coretax_build_pins
     monkeypatch.setattr(coretax_build_pins, 'load_build_pins',
-                        lambda path=None: dict(pins))
+                        lambda path=None: dict(pins), raising=raising)

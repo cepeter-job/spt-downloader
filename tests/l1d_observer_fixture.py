@@ -3,7 +3,6 @@ import hashlib
 import html
 import json
 
-import coretax_corporate_projection as projection
 from test_corporate_l1d_native import envelope, current_classification_envelope
 from test_corporate_l1d_projection import HEADERS
 from test_corporate_l7_native import ASSET, BUILD, MAIN, MAIN_BUILD, selected

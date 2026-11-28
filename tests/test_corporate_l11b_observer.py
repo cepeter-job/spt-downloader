@@ -6,7 +6,6 @@ import pytest
 
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
-from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
 from test_corporate_l11b_projection import route, selected
 import support_json_corpus as corpus
 
@@ -42,27 +41,35 @@ def test_observer_emits_only_exact_two_pin_proof(monkeypatch, defect):
     pin_override(monkeypatch, pins)
     probes = []
 
-    def evaluate(script, url):
+    def evaluate(script, url=None):
+        # The page double must serve both shapes the observer uses: a bare
+        # expression (locale) and a script digest probed per URL.
+        if url is None:
+            return 'id-ID'
         probes.append((script, url))
         return assets.get(url)
 
     page = SimpleNamespace(url=route(), evaluate=evaluate)
     forms = observer.observe_forms(page, selected(), corpus.SCOPE, object(),
                                    approved_digest=assets[projection.CIT_SOURCE])
-    # The hydrated L11-B proof verifies every provider it binds. Assert the
+    # The v1 L11-B proof verifies the two providers it binds (cit+main); the
+    # third (vendor) probe belongs to the hydrated profile, which needs the
+    # capture lifetime protocol this double does not provide. Assert the
     # invariant rather than an exact order: a defect may stop the walk early,
     # which is exactly what must keep the binding refused.
-    probed = {url for _, url in probes}
+    probed = {url for _, url in probes if url is not None}
     assert projection.CIT_SOURCE in probed
     if defect is None:
-        assert probed == {projection.CIT_SOURCE, projection.MAIN_SOURCE,
-                          projection.VENDOR_SOURCE}
+        assert probed == {projection.CIT_SOURCE, projection.MAIN_SOURCE}
     if defect is not None:
         assert forms is None
     else:
         assert forms is not None
         binding, = [form for form in forms if form['name'] == 'L11-B']
-        assert binding['projection'] == {'kind': 'corporate-l11b-v1',
-                                         'builds': assets, 'route': route()}
+        assert binding['projection'] == {
+            'kind': 'corporate-l11b-v1',
+            'builds': {projection.CIT_SOURCE: assets[projection.CIT_SOURCE],
+                       projection.MAIN_SOURCE: assets[projection.MAIN_SOURCE]},
+            'route': route()}
         assert binding['paths'] == [['L11BFormData']]
         assert binding['grids'] == []

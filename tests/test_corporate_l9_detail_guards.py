@@ -7,11 +7,16 @@ import coretax_browser as driver
 from conftest import pin_override
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
+import coretax_build_pins as build_pins
 import coretax_json as adapter
 import support_json_corpus as corpus
 from test_corporate_l9_details_consumer import (adapt, bindings, packets, clock, lifetime,
     shared_catalog_contract as shared_catalog_contract)
 from test_corporate_l9_projection import ROUTE
+
+# The reviewed allowlist the validator resolves at call time. Captured before any
+# test patches ``load_build_pins``, so a fixture override cannot rewrite it.
+REVIEWED = dict(build_pins.load_build_pins())
 
 
 class Page:
@@ -23,7 +28,7 @@ class Page:
         if 'AbortController' in script:
             return None
         if arg in (projection.MAIN_SOURCE, projection.VENDOR_SOURCE):
-            return 'a' * 64 if self.defect == arg else projection.L9_DETAIL_BUILD_DIGESTS[arg]
+            return 'a' * 64 if self.defect == arg else REVIEWED[arg]
         if 'urls.every' in script:
             return self.defect != 'providers'
         assert 'navigator.language' in script
@@ -50,14 +55,15 @@ def test_observer_only_offers_details_with_positive_pins_sources_and_dependencie
     tables = bindings(urls)[1]['projection']['tables']
     monkeypatch.setattr(observer, '_l9_tables', lambda *args: None if defect == 'tables' else tables)
     if defect == 'malformed-pin':
-        monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', {**projection.L9_DETAIL_BUILD_DIGESTS,
-            projection.VENDOR_SOURCE: None})
+        # The validator resolves the allowlist at call time, so the defect must
+        # be injected into that allowlist rather than a module-level dict.
+        pin_override(monkeypatch, {**REVIEWED, projection.VENDOR_SOURCE: None})
     elif defect == 'no-pin':
         pin_override(monkeypatch, {})
     elif defect == 'no-shared-producer':
         monkeypatch.delitem(adapter.CORPORATE_REFERENCE_REQUESTS, urls['TANGIBLE_ASSET'])
     proof = observer._observe_l9(page, object(), Capture(urls, defect),
-        projection.BUILD_DIGESTS[projection.CIT_SOURCE], None)
+        REVIEWED[projection.CIT_SOURCE], None)
     assert (proof is not None) is (defect is None)
     if defect is None:
         assert proof['kind'] == 'corporate-l9-details-v1' and len(proof['tables']) == 12

@@ -2,7 +2,6 @@
 import html
 import json
 
-import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
 from test_corporate_l11a_native import GRIDS, OWNERS, GROUPS, packets, request
 from test_corporate_l11a_projection import HEADERS, CAPTIONS

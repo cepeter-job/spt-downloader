@@ -27,6 +27,10 @@ MAIN_SOURCE = resolve_role_url('main', ORIGIN + '/returnsheets/id-ID/main.cc3b47
 VENDOR_SOURCE = resolve_role_url('vendor', ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js')
 
 def _corporate_pins(urls):
+    # Imported inside the call so a test or a mid-run overlay that replaces
+    # ``load_build_pins`` is followed; a module-level import would freeze the
+    # reviewed snapshot and silently ignore the override.
+    from coretax_build_pins import load_build_pins
     pins = load_build_pins()
     return {url: pins[url] for url in urls if url in pins}
 
@@ -616,10 +620,10 @@ def _apply_l10c(binding, section, observed_forms, *, root, payload, record, even
     keys = {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references', 'visibility_binding'}
     if (not isinstance(proof, dict) or set(proof) != keys
             or proof['kind'] != 'corporate-l10c-v1'
-            or proof['builds'] != L10C_BUILD_DIGESTS
-            or set(L10C_BUILD_DIGESTS) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
+            or set(_corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
-                   for value in L10C_BUILD_DIGESTS.values())
+                   for value in _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE)).values())
             or proof['locale'] != 'id-ID' or proof['timezone'] != 'Asia/Jakarta'
             or proof['visibility_binding'] != 'current-induk-enabled-v1'
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[L10C_ROOT]]
@@ -966,7 +970,8 @@ def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name
 def _apply_l11c(binding, section, observed_forms, *, root, payload, record, event, country_packets):
     proof = binding['projection']
     if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
-            or proof['kind'] != 'corporate-l11c-v1' or proof['builds'] != L11C_BUILD_DIGESTS
+            or proof['kind'] != 'corporate-l11c-v1'
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[L11C_ROOT]]
             or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])):
         raise _UnsupportedMetadata('unsupported_corporate_l11c_semantic_binding')
@@ -1305,7 +1310,11 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
     proof = binding['projection']
     builds = proof.get('builds') if isinstance(proof, dict) else None
     hydrated = isinstance(proof, dict) and proof.get('kind') == 'corporate-l11b-hydrated-v2'
-    pins = L11B_HYDRATED_BUILD_DIGESTS if hydrated else BUILD_DIGESTS
+    # Call-time allowlist for both profiles: the hydrated observer resolves its
+    # three roles per call, so an import-time snapshot would refuse a record the
+    # observer just admitted after a mid-run rotation.
+    pins = (_corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE)) if hydrated
+            else _corporate_pins((CIT_SOURCE, MAIN_SOURCE)))
     providers = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE} if hydrated else {CIT_SOURCE, MAIN_SOURCE}
     if (not isinstance(proof, dict) or set(proof) != ({'kind', 'builds', 'route', 'tables', 'part_ii'}
                                                                   if hydrated else {'kind', 'builds', 'route'})
@@ -1395,7 +1404,8 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
             or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
             or 'body_layout' in proof and (proof['body_layout'] != L1D_OMISSION_LAYOUT
                 or proof.get('visibility_binding') != 'current-induk-enabled-v1')
-            or proof['kind'] != 'corporate-l1d-v1' or proof['builds'] != L1D_BUILD_DIGESTS
+            or proof['kind'] != 'corporate-l1d-v1'
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
             or proof['route'] != event['frame_url'] or binding.get('paths') != [['L1dFormData']]
             or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])):
         raise _UnsupportedMetadata('unsupported_corporate_l1d_semantic_binding')
@@ -1471,7 +1481,8 @@ def _apply_l8(binding, section, observed_forms, *, root, payload, record, event)
     proof = binding['projection']
     if (not isinstance(proof, dict)
             or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
-            or proof['kind'] != 'corporate-l8-v1' or proof['builds'] != L8_BUILD_DIGESTS
+            or proof['kind'] != 'corporate-l8-v1'
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
             or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
             or proof['timezone'] != 'Asia/Jakarta' or binding.get('paths') != [[L8_ROOT]]
             or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])
@@ -1876,7 +1887,9 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
     """Only a distinct capability plus final capture-owned facts admit negatives."""
     proof = binding.get('raw_negative_projection')
     fields = record.get('source_fields', {})
-    pins = L7_NEGATIVE_BUILD_DIGESTS
+    # Call-time allowlist: the observer resolves pins per call, so the consumer
+    # must compare against the same snapshot rather than an import-time one.
+    pins = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
@@ -1938,7 +1951,7 @@ def project_induk(main, *, tax_type):
 def _induk_submitted(binding, *, main, root, payload, record, event):
     """Only stable submitted controls; editing arithmetic is NOT executed here."""
     proof = binding['projection']
-    pins = INDUK_SUBMITTED_BUILD_DIGESTS
+    pins = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
     fields = record.get('source_fields', {})
     route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
@@ -2394,7 +2407,8 @@ def _l10a_page_source(packets, request):
 def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, record, event,
                           grid_packets, reference_packets):
     proof = binding['projection']
-    pins = L10A_BUILD_DIGESTS
+    # Call-time allowlist, matching the observer's per-call resolution.
+    pins = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
     if (not isinstance(proof, dict)
             or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables',
                               'references', 'visibility_binding'}
@@ -2888,12 +2902,14 @@ def project_l2(form, *, tax_type, locale):
 
 def _apply_l2_owner(binding, section, observed_forms, *, root, payload, record, event, reference_packets):
     proof = binding['projection']
+    # Call-time allowlist, matching the observer's per-call resolution.
+    pins = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
     if (set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
             or not isinstance(proof['builds'], dict)
             or set(proof['builds']) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
-            or proof['builds'] != L2_BUILD_DIGESTS
+            or proof['builds'] != pins
             or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
-                   for value in (*proof['builds'].values(), *L2_BUILD_DIGESTS.values()))
+                   for value in (*proof['builds'].values(), *pins.values()))
             or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
             or proof['timezone'] != 'Asia/Jakarta' or event.get('component_lifetime') is None
             or binding.get('paths') != [[L2_ROOT]] or binding.get('grids')
@@ -3294,7 +3310,10 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event,
     builds = proof.get('builds') if isinstance(proof, dict) else None
     grids = binding.get('grids')
     details = isinstance(proof, dict) and proof.get('kind') == 'corporate-l9-details-v1'
-    approved = L9_DETAIL_BUILD_DIGESTS if details else {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)}
+    # Resolved at call time: a redeploy the overlay follows mid-run must not
+    # leave the consumer comparing the proof against an import-time snapshot.
+    approved = (_corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE)) if details
+                else {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)})
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE} if details else {CIT_SOURCE}
     keys = {'kind', 'builds', 'route', 'locale'} | ({'timezone', 'tables', 'references'} if details else set())
     if (not isinstance(proof, dict) or set(proof) != keys
@@ -4431,7 +4450,8 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
             or set(proof) - {'standalone_layout', 'visibility_binding'} != keys
             or 'standalone_layout' in proof and proof['standalone_layout'] != 'overseas-controls-v1'
             or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
-            or proof['kind'] != 'corporate-l3-v1' or proof['builds'] != L3_BUILD_DIGESTS
+            or proof['kind'] != 'corporate-l3-v1'
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L3_ROOT]]
             or binding.get('grids', []) or event.get('component_lifetime') is None):
         raise _UnsupportedMetadata('unverified_corporate_l3_semantic_binding')
@@ -4631,7 +4651,8 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
     if (not isinstance(proof, dict)
             or set(proof) - {'visibility_binding'} != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
             or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
-            or proof['kind'] != 'corporate-l11a-v1' or proof['builds'] != L11A_BUILD_DIGESTS
+            or proof['kind'] != 'corporate-l11a-v1'
+            or proof['builds'] != _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L11A_ROOT]]
             or binding.get('grids', []) or binding.get('dependencies', [])
             or event.get('component_lifetime') is None):
